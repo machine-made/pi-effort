@@ -48,8 +48,8 @@
     "LICENSE"
   ],
   "devDependencies": {
-    "@mariozechner/pi-ai": "^0.72.1",
-    "@mariozechner/pi-coding-agent": "^0.72.1",
+    "@mariozechner/pi-ai": "npm:@earendil-works/pi-ai@^0.83.0",
+    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@^0.83.0",
     "@types/node": "^24.0.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0"

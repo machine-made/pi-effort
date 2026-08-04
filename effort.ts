@@ -8,11 +8,11 @@ import type { Model, ThinkingLevel } from "@mariozechner/pi-ai";
  * All levels the extension knows about, including "off" (Pi's internal state).
  * The slash-command surface intentionally exposes only model reasoning options.
  */
-export const ALL_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+export const ALL_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export const ALL_LEVELS_WITHOUT_XHIGH = ["off", "minimal", "low", "medium", "high"] as const;
 
 /** Levels shown to users in usage and tab completion. */
-export const USER_LEVELS = ["minimal", "low", "medium", "high", "xhigh"] as const satisfies readonly ThinkingLevel[];
+export const USER_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const satisfies readonly ThinkingLevel[];
 
 /** Semantic aliases that resolve per-model. */
 export const SEMANTIC_ALIASES = ["min", "max"] as const;
@@ -157,7 +157,7 @@ export function resolveMinLevel(model: EffortModel | null | undefined): EffortLe
  */
 export function resolveMaxLevel(model: EffortModel | null | undefined): EffortLevel | undefined {
   if (!model?.reasoning) return undefined;
-  return getAvailableThinkingLevels(model).includes("xhigh") ? "xhigh" : "high";
+  return getUserFacingLevels(model).at(-1);
 }
 
 /** Resolve a user-facing level or semantic alias against the active model. */

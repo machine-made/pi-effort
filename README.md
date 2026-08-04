@@ -22,6 +22,7 @@ No `/effort show`, `/effort default`, `/effort options`, `/effort fast`, or `/fa
 | Non-reasoning | — | — | *(thinking unavailable)* |
 | Reasoning | `minimal` | `high` | `minimal`, `low`, `medium`, `high` |
 | xhigh-capable reasoning | `minimal` | `xhigh` | `minimal`, `low`, `medium`, `high`, `xhigh` |
+| max-capable reasoning | `minimal` | `max` | `minimal`, `low`, `medium`, `high`, `max` |
 
 Examples:
 

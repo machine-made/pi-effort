@@ -224,7 +224,8 @@ export default function effortExtension(pi: ExtensionAPI): void {
       const trailingSpace = /\s$/.test(value);
 
       const modelLevels = getUserFacingLevels(currentModel);
-      const options = modelLevels.length > 0 ? ["min", ...modelLevels, "max"] : [];
+      // Dedup: "max" may already be in modelLevels for max-capable models.
+      const options = modelLevels.length > 0 ? [...new Set(["min", ...modelLevels, "max"])] : [];
 
       if (tokens.length === 0) {
         return options.map((t) => ({ value: t, label: t }));

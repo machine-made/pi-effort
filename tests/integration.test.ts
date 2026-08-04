@@ -4,11 +4,11 @@ import { mkdtempSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Model, ThinkingLevel } from "@mariozechner/pi-ai";
+import { InMemoryCredentialStore } from "@mariozechner/pi-ai";
 import {
-  AuthStorage,
   createAgentSession,
   createEventBus,
-  ModelRegistry,
+  ModelRuntime,
   SessionManager,
   SettingsManager,
   type LoadExtensionsResult,
@@ -49,6 +49,40 @@ const xhighModel: Model<any> = {
   maxTokens: 4096,
 };
 
+const maxModel: Model<any> = {
+  id: "deepseek-v4-flash",
+  name: "DeepSeek V4 Flash",
+  api: "openai-completions",
+  provider: "opencode-go",
+  baseUrl: "https://opencode.ai/zen/go/v1",
+  reasoning: true,
+  thinkingLevelMap: { high: "high", max: "max" },
+  input: ["text"],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 196608,
+  maxTokens: 4096,
+};
+
+const maxOnlyModel: Model<any> = {
+  id: "kimi-k3",
+  name: "Kimi K3",
+  api: "openai-completions",
+  provider: "openrouter",
+  baseUrl: "https://openrouter.ai/api/v1",
+  reasoning: true,
+  thinkingLevelMap: {
+    minimal: null,
+    low: null,
+    medium: null,
+    high: null,
+    max: "max",
+  },
+  input: ["text"],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 196608,
+  maxTokens: 4096,
+};
+
 const plainModel: Model<any> = {
   id: "plain-model",
   name: "Plain Model",
@@ -70,7 +104,9 @@ function createResourceLoader(extensionsResult: LoadExtensionsResult): ResourceL
     getThemes: () => ({ themes: [], diagnostics: [] }),
     getAgentsFiles: () => ({ agentsFiles: [] }),
     getSystemPrompt: () => undefined,
+    getSystemPromptSource: () => undefined,
     getAppendSystemPrompt: () => [],
+    getAppendSystemPromptSources: () => [],
     extendResources: () => {},
     reload: async () => {},
   };
@@ -120,9 +156,9 @@ async function createTestSession(
     settingsManager.applyOverrides({ defaultThinkingLevel });
   }
 
-  const authStorage = AuthStorage.create(join(config.agentDir, "auth.json"));
-  authStorage.set("openrouter", { type: "api_key", key: "test" });
-  const modelRegistry = ModelRegistry.create(authStorage, join(config.agentDir, "models.json"));
+  const credentials = new InMemoryCredentialStore();
+  await credentials.modify("openrouter", async () => ({ type: "api_key", key: "test" }));
+  const modelRuntime = await ModelRuntime.create({ credentials, authPath: join(config.agentDir, "auth.json"), modelsPath: join(config.agentDir, "models.json"), allowModelNetwork: false });
   const sessionManager = SessionManager.inMemory();
 
   const { session } = await createAgentSession({
@@ -131,8 +167,7 @@ async function createTestSession(
     model,
     thinkingLevel,
     settingsManager,
-    authStorage,
-    modelRegistry,
+    modelRuntime,
     sessionManager,
     resourceLoader,
   });
@@ -287,6 +322,28 @@ test("runtime /effort max resolves to xhigh on xhigh-capable model", async () =>
   }
 });
 
+test("runtime /effort max resolves to max on max-capable model", async () => {
+  const { session, previousAgentDir } = await createTestSession(maxModel, "medium", "medium");
+
+  try {
+    await session.prompt("/effort max");
+    assert.equal(session.thinkingLevel, "max" as ThinkingLevel);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime /effort max resolves to max on max-only model", async () => {
+  const { session, previousAgentDir } = await createTestSession(maxOnlyModel, "medium", "medium");
+
+  try {
+    await session.prompt("/effort max");
+    assert.equal(session.thinkingLevel, "max" as ThinkingLevel);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
 test("runtime /effort min resolves to minimal on reasoning model", async () => {
   const { session, previousAgentDir } = await createTestSession(reasoningModel, "high", "high");
 
@@ -305,6 +362,16 @@ test("runtime --effort flag resolves aliases on session start", async () => {
 
   try {
     assert.equal(session.thinkingLevel, "xhigh" as ThinkingLevel);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime --effort max flag resolves to max on max-capable model", async () => {
+  const { session, previousAgentDir } = await createTestSession(maxModel, "medium", "medium", { effort: "max" });
+
+  try {
+    assert.equal(session.thinkingLevel, "max" as ThinkingLevel);
   } finally {
     cleanupSession(previousAgentDir);
   }

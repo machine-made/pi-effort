@@ -6,11 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+- `/effort max` now resolves to the model's true highest level, including `max` (e.g. deepseek-v4-flash) instead of capping at `xhigh`/`high`. Models that only support `max` (e.g. kimi-k3, gpt-5.6-luna) no longer error.
+
 ### Added
-- `/fast` toggle plus `/fast on|off` overrides for OpenAI/Codex priority service tier.
+- `/effort max` toggle plus `/fast on|off` overrides for OpenAI/Codex priority service tier.
 - Compact footer status keys for powerline custom items: `pi-effort-thinking` and `pi-effort-fast`.
 
 ### Changed
+- Development dependencies moved to `@earendil-works/pi-ai` / `@earendil-works/pi-coding-agent` 0.83 (the renamed `@mariozechner` packages) so local type-check and tests cover the `max` thinking level.
 - Simplified the slash-command surface to `/effort {min|minimal|low|medium|high|xhigh|max}` and `/fast [on|off]`.
 
 ## [0.0.5] - 2026-05-04

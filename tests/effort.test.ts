@@ -7,7 +7,7 @@ import type { ThinkingLevel } from "@mariozechner/pi-ai";
 import {
   FAST_USAGE,
   USAGE,
-  USER_LEVELS,
+  type USER_LEVELS,
   getAvailableThinkingLevels,
   getFastMode,
   getUserFacingLevels,
@@ -20,7 +20,7 @@ import {
   writeFastMode,
 } from "../effort.ts";
 
-// If @mariozechner/pi-ai adds a new ThinkingLevel (e.g. "xmax"), this
+// If @earendil-works/pi-ai adds a new ThinkingLevel (e.g. "xmax"), this
 // refuses to compile until USER_LEVELS is extended. Removal is already
 // caught by `satisfies readonly ThinkingLevel[]` in effort.ts.
 type _UncoveredLevels = Exclude<ThinkingLevel, (typeof USER_LEVELS)[number]>;
@@ -30,6 +30,8 @@ void _driftCheck;
 const standardReasoningModel = { id: "minimax/minimax-m2.7", reasoning: true } as const;
 const xhighReasoningModel = { id: "gpt-5.4", reasoning: true, thinkingLevelMap: { xhigh: "xhigh" } } as const;
 const opusXhighReasoningModel = { id: "claude-opus-4.6", reasoning: true, thinkingLevelMap: { xhigh: "xhigh" } } as const;
+const maxReasoningModel = { id: "deepseek-v4-flash", reasoning: true, thinkingLevelMap: { high: "high", max: "max" } } as const;
+const maxOnlyReasoningModel = { id: "kimi-k3", reasoning: true, thinkingLevelMap: { minimal: null, low: null, medium: null, high: null, max: "max" } } as const;
 
 // ─── parseEffortCommand / parseFastCommand ──────────────────────────
 
@@ -99,6 +101,11 @@ test("resolveMaxLevel returns xhigh for xhigh-capable models", () => {
   assert.equal(resolveMaxLevel(opusXhighReasoningModel), "xhigh");
 });
 
+test("resolveMaxLevel returns max for max-capable models", () => {
+  assert.equal(resolveMaxLevel(maxReasoningModel), "max");
+  assert.equal(resolveMaxLevel(maxOnlyReasoningModel), "max");
+});
+
 test("resolveMaxLevel returns undefined for non-reasoning models", () => {
   assert.equal(resolveMaxLevel({ id: "plain-model", reasoning: false }), undefined);
   assert.equal(resolveMaxLevel(null), undefined);
@@ -111,6 +118,8 @@ test("resolveEffortLevel resolves semantic aliases per model", () => {
   assert.equal(resolveEffortLevel("min", standard), "minimal");
   assert.equal(resolveEffortLevel("max", standard), "high");
   assert.equal(resolveEffortLevel("max", xhigh), "xhigh");
+  assert.equal(resolveEffortLevel("max", maxReasoningModel), "max");
+  assert.equal(resolveEffortLevel("max", maxOnlyReasoningModel), "max");
   assert.equal(resolveEffortLevel("medium", standard), "medium");
   assert.equal(resolveEffortLevel("min", { id: "plain-model", reasoning: false }), undefined);
 });
@@ -135,6 +144,18 @@ test("xhigh capability: minimax does not include xhigh in available levels", () 
   ]);
 });
 
+test("max capability: deepseek includes max in available levels", () => {
+  assert.deepEqual(getAvailableThinkingLevels(maxReasoningModel), [
+    "off", "minimal", "low", "medium", "high", "max",
+  ]);
+});
+
+test("max capability: max-only model surfaces only off and max", () => {
+  assert.deepEqual(getAvailableThinkingLevels(maxOnlyReasoningModel), [
+    "off", "max",
+  ]);
+});
+
 // ─── getAvailableThinkingLevels / getUserFacingLevels ────────────────
 
 test("getAvailableThinkingLevels includes off for all reasoning models", () => {
@@ -155,6 +176,10 @@ test("getUserFacingLevels excludes off", () => {
   assert.deepEqual(getUserFacingLevels(xhighReasoningModel), [
     "minimal", "low", "medium", "high", "xhigh",
   ]);
+  assert.deepEqual(getUserFacingLevels(maxReasoningModel), [
+    "minimal", "low", "medium", "high", "max",
+  ]);
+  assert.deepEqual(getUserFacingLevels(maxOnlyReasoningModel), ["max"]);
 });
 
 // ─── cycleLevel ──────────────────────────────────────────────────────
@@ -164,6 +189,12 @@ test("cycleLevel advances through user-facing levels", () => {
   assert.equal(cycleLevel("minimal", model), "low");
   assert.equal(cycleLevel("medium", model), "high");
   assert.equal(cycleLevel("xhigh", model), "minimal"); // wraps
+});
+
+test("cycleLevel advances through max on max-capable models", () => {
+  const model = maxReasoningModel;
+  assert.equal(cycleLevel("high", model), "max");
+  assert.equal(cycleLevel("max", model), "minimal"); // wraps
 });
 
 test("cycleLevel returns first level for unknown current", () => {
