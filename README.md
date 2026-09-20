@@ -9,9 +9,11 @@ Claude Fable reviewed 0.0.7 on 2026-08-15. See [SECURITY.md](SECURITY.md).
 Exactly two slash commands are exposed:
 
 ```text
-/effort {min|minimal|low|medium|high|xhigh|max}
+/effort [min|minimal|low|medium|high|xhigh|max]
 /fast [on|off]
 ```
+
+Bare `/effort` opens a picker with the current model's levels; Enter applies, Esc cancels.
 
 No `/effort show`, `/effort default`, `/effort options`, `/effort fast`, or `/fast status`. Bare `/fast` toggles the current fast-mode setting.
 

@@ -248,9 +248,21 @@ export default function effortExtension(pi: ExtensionAPI): void {
       return null;
     },
     handler: async (args, ctx) => {
+      let input = args.trim();
+      if (input === "") {
+        const levels = getUserFacingLevels(ctx.model).filter((level) => level !== "max");
+        if (levels.length === 0) {
+          ctx.ui.notify(`Thinking not available for ${modelName(ctx.model)}`, "error");
+          return;
+        }
+        const picked = await ctx.ui.select(`Effort (current: ${pi.getThinkingLevel()})`, ["min", ...levels, "max"]);
+        if (!picked) return;
+        input = picked;
+      }
+
       let command;
       try {
-        command = parseEffortCommand(args);
+        command = parseEffortCommand(input);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         ctx.ui.notify(message, "error");

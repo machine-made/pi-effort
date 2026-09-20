@@ -308,5 +308,5 @@ export function writeFastMode(settingsPath: string, enabled: boolean): void {
 
 // ─── Help text ──────────────────────────────────────────────────────
 
-export const USAGE = "Usage: /effort {min|minimal|low|medium|high|xhigh|max}";
+export const USAGE = "Usage: /effort [min|minimal|low|medium|high|xhigh|max]";
 export const FAST_USAGE = "Usage: /fast [on|off]";
