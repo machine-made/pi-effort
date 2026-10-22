@@ -9,6 +9,7 @@ import {
   USAGE,
   USER_LEVELS,
   getAvailableThinkingLevels,
+  getDisplaySettings,
   getFastMode,
   getUserFacingLevels,
   parseEffortCommand,
@@ -262,6 +263,29 @@ test("getFastMode returns false when unset or corrupt", () => {
 
   writeFileSync(settingsPath, "{not json}");
   assert.equal(getFastMode(settingsPath), false);
+});
+
+test("getDisplaySettings shows everything when unset or corrupt", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-effort-"));
+  const settingsPath = join(dir, "settings.json");
+  const showEverything = { showModelEffortInWorkingMessage: true, showModelEffortInFooter: true };
+  assert.deepEqual(getDisplaySettings(settingsPath), showEverything);
+
+  writeFileSync(settingsPath, "{not json}");
+  assert.deepEqual(getDisplaySettings(settingsPath), showEverything);
+});
+
+test("getDisplaySettings hides only on an explicit false", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-effort-"));
+  const settingsPath = join(dir, "settings.json");
+  writeFileSync(
+    settingsPath,
+    JSON.stringify({ "pi-effort": { showModelEffortInWorkingMessage: false, showModelEffortInFooter: "no" } })
+  );
+  assert.deepEqual(getDisplaySettings(settingsPath), {
+    showModelEffortInWorkingMessage: false,
+    showModelEffortInFooter: true,
+  });
 });
 
 // ─── USAGE ───────────────────────────────────────────────────────────

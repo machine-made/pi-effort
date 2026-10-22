@@ -275,6 +275,29 @@ export function getFastMode(settingsPath: string): boolean {
   }
 }
 
+export interface DisplaySettings {
+  showModelEffortInWorkingMessage: boolean;
+  showModelEffortInFooter: boolean;
+}
+
+const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
+  showModelEffortInWorkingMessage: true,
+  showModelEffortInFooter: true,
+};
+
+export function getDisplaySettings(settingsPath: string): DisplaySettings {
+  try {
+    const settings = readSettingsObject(settingsPath);
+    const piEffort = readPiEffortSettings(settings);
+    return {
+      showModelEffortInWorkingMessage: piEffort.showModelEffortInWorkingMessage !== false,
+      showModelEffortInFooter: piEffort.showModelEffortInFooter !== false,
+    };
+  } catch {
+    return { ...DEFAULT_DISPLAY_SETTINGS };
+  }
+}
+
 export function writeFastMode(settingsPath: string, enabled: boolean): void {
   const settings = readSettingsObject(settingsPath);
   const piEffort = readPiEffortSettings(settings);
