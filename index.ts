@@ -2,7 +2,9 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
+  DEFAULT_TOKEN,
   type DisplaySettings,
+  type EffortChoice,
   type EffortLevel,
   type EffortModel,
   cycleLevel,
@@ -16,6 +18,7 @@ import {
   parseEffortCommand,
   parseFastCommand,
   resolveEffortCommand,
+  stripThinkingOff,
   toThinkingLevel,
   writeFastMode,
   writeModelEffort,
@@ -29,18 +32,22 @@ function formatAvailableLevels(model: EffortModel | null | undefined): string {
   return getAvailableThinkingLevels(model).join(", ");
 }
 
-/** `/effort` tokens for the model: `min`, its reasoning levels, `max`, then the two names for off. */
+/** `/effort` tokens for the model: `min`, its reasoning levels, `max`, then `off` and `default`. */
 function effortOptions(model: EffortModel | null | undefined): string[] {
   const levels = getUserFacingLevels(model);
   if (levels.length === 0) return [];
   // `max` is always offered last as the alias; a max-only model still gets `min` and `max`.
   const options = ["min", ...levels.filter((level) => level !== "max"), "max"];
   // Some models cannot turn thinking off (`thinkingLevelMap.off: null`, e.g. gpt-5).
-  return getAvailableThinkingLevels(model).includes("off") ? [...options, "off", "default"] : options;
+  // `default` also needs `off`: it runs Pi at off and removes the off fields from each request.
+  return getAvailableThinkingLevels(model).includes("off") ? [...options, "off", DEFAULT_TOKEN] : options;
 }
 
-/** Completion and picker labels; `off` and `default` name the same state. */
-const OPTION_LABELS: Record<string, string> = { off: "off (default)", default: "default (off)" };
+/** Completion and picker labels for the two tokens whose name alone is unclear. */
+const OPTION_LABELS: Record<string, string> = {
+  off: "off (no thinking)",
+  [DEFAULT_TOKEN]: "default (model's own effort)",
+};
 
 function optionLabel(token: string): string {
   return OPTION_LABELS[token] ?? token;
@@ -74,6 +81,14 @@ export default function effortExtension(pi: ExtensionAPI): void {
   let fastMode = getFastMode(settingsPath);
   // Tracks whether this extension owns the working message, so turning the display off clears it once.
   let ownsWorkingMessage = false;
+  // `/effort default`: Pi runs at off and before_provider_request strips the off fields.
+  let providerDefault = false;
+
+  /** The user's current choice: Pi's level, or `default` while provider-default mode is on. */
+  function currentChoice(): EffortChoice {
+    const level = pi.getThinkingLevel() as EffortLevel;
+    return providerDefault && level === "off" ? DEFAULT_TOKEN : level;
+  }
 
   function refreshFastMode(): boolean {
     fastMode = getFastMode(settingsPath);
@@ -82,7 +97,7 @@ export default function effortExtension(pi: ExtensionAPI): void {
 
   function syncEffortUi(
     ctx: ExtensionContext,
-    current: string = pi.getThinkingLevel(),
+    current: string = currentChoice(),
     updateWorkingMessage = true
   ): string {
     const settings = getPiEffortSettings(settingsPath);
@@ -100,7 +115,7 @@ export default function effortExtension(pi: ExtensionAPI): void {
 
   /** The effort the loader should show: during a run it stays tied to the run-start effort. */
   function visibleEffort(ctx: ExtensionContext): string {
-    return ctx.isIdle() ? pi.getThinkingLevel() : activeRunEffort ?? pi.getThinkingLevel();
+    return ctx.isIdle() ? currentChoice() : activeRunEffort ?? currentChoice();
   }
 
   /** Remember the current level for the active model. A failed write never blocks the effort change. */
@@ -108,14 +123,14 @@ export default function effortExtension(pi: ExtensionAPI): void {
     const key = modelKey(ctx.model);
     if (!key) return;
     try {
-      writeModelEffort(settingsPath, key, pi.getThinkingLevel() as EffortLevel);
+      writeModelEffort(settingsPath, key, currentChoice());
     } catch (error) {
       ctx.ui.notify(`Failed to remember effort: ${error instanceof Error ? error.message : String(error)}`, "warning");
     }
   }
 
-  /** Set `level`, remember it for the model, refresh the UI, and report the change. */
-  function applySessionLevel(ctx: ExtensionContext, level: EffortLevel): void {
+  /** Set `level` (with `useDefault`, the provider-default mode), remember it, refresh the UI, report. */
+  function applySessionLevel(ctx: ExtensionContext, level: EffortLevel, useDefault = false): void {
     const available = getAvailableThinkingLevels(ctx.model);
     if (!available.includes(level)) {
       ctx.ui.notify(
@@ -125,9 +140,10 @@ export default function effortExtension(pi: ExtensionAPI): void {
       return;
     }
 
-    const before = pi.getThinkingLevel();
+    const before = currentChoice();
     pi.setThinkingLevel(toThinkingLevel(level));
-    const after = pi.getThinkingLevel();
+    providerDefault = useDefault && pi.getThinkingLevel() === "off";
+    const after = currentChoice();
     // Pi fires thinking_level_select only on a change, so record here too.
     rememberEffort(ctx);
     const appliesNow = ctx.isIdle();
@@ -144,24 +160,23 @@ export default function effortExtension(pi: ExtensionAPI): void {
 
   // ─── Provider hook: fast mode maps to OpenAI/Codex priority tier ──
   pi.on("before_provider_request", (event, ctx) => {
-    if (!fastMode) return undefined;
-    if (!isFastEligible(ctx.model)) return undefined;
-
     const payload = event.payload;
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
       return undefined;
     }
 
     const body = payload as Record<string, unknown>;
-    const model = typeof body.model === "string" ? body.model : "";
-    if (!isFastModelId(model) || body.service_tier !== undefined) {
-      return undefined;
+    let next = body;
+    if (providerDefault && pi.getThinkingLevel() === "off") {
+      next = stripThinkingOff(next) ?? next;
     }
 
-    return {
-      ...body,
-      service_tier: "priority",
-    };
+    const model = typeof body.model === "string" ? body.model : "";
+    if (fastMode && isFastEligible(ctx.model) && isFastModelId(model) && body.service_tier === undefined) {
+      next = { ...next, service_tier: "priority" };
+    }
+
+    return next === body ? undefined : next;
   });
 
   // ─── Keyboard shortcut: Ctrl+Shift+E to cycle effort ─────────────
@@ -182,6 +197,12 @@ export default function effortExtension(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
     // Track model for tab completion
     currentModel = ctx.model ?? null;
+    // Pi saves `off` for a `default` choice; the model's remembered choice tells the two apart.
+    const startKey = modelKey(ctx.model);
+    providerDefault =
+      pi.getThinkingLevel() === "off" &&
+      startKey !== undefined &&
+      getPiEffortSettings(settingsPath).modelEffort[startKey] === DEFAULT_TOKEN;
     // Sync current effort labels
     syncEffortUi(ctx);
     if (fastMode) {
@@ -215,6 +236,7 @@ export default function effortExtension(pi: ExtensionAPI): void {
       }
 
       pi.setThinkingLevel(toThinkingLevel(resolved));
+      providerDefault = command.kind === "set-default" && pi.getThinkingLevel() === "off";
       syncEffortUi(ctx);
     }
   });
@@ -226,18 +248,23 @@ export default function effortExtension(pi: ExtensionAPI): void {
     currentModel = event.model;
     const key = modelKey(event.model);
     const remembered = key ? getPiEffortSettings(settingsPath).modelEffort[key] : undefined;
+    const target = remembered === DEFAULT_TOKEN ? "off" : remembered;
     const pinned =
       event.source === "cycle" &&
       ctx.scopedModels.some((scoped) => modelKey(scoped.model) === key && scoped.thinkingLevel !== undefined);
     if (
       event.source !== "restore" &&
       remembered !== undefined &&
+      target !== undefined &&
       !pinned &&
-      remembered !== pi.getThinkingLevel() &&
-      getAvailableThinkingLevels(event.model).includes(remembered)
+      remembered !== currentChoice() &&
+      getAvailableThinkingLevels(event.model).includes(target)
     ) {
-      pi.setThinkingLevel(toThinkingLevel(remembered));
+      pi.setThinkingLevel(toThinkingLevel(target));
+      providerDefault = remembered === DEFAULT_TOKEN;
       ctx.ui.notify(`Effort ${remembered} restored for ${modelName(event.model)}`, "info");
+    } else if (pi.getThinkingLevel() !== "off") {
+      providerDefault = false;
     }
     syncEffortUi(ctx, visibleEffort(ctx));
   });
@@ -245,7 +272,9 @@ export default function effortExtension(pi: ExtensionAPI): void {
   // ─── thinking_level_select: remember changes made in Pi's own UI ──
   // During a model switch Pi sets the new model, clamps the level (firing this event), and only then
   // fires model_select. Until then currentModel is still the old model, so the clamp is not recorded.
-  pi.on("thinking_level_select", (_event, ctx) => {
+  pi.on("thinking_level_select", (event, ctx) => {
+    // Any real level ends provider-default mode; `off` from Pi's selector keeps it.
+    if (event.level !== "off") providerDefault = false;
     if (modelKey(ctx.model) === modelKey(currentModel)) rememberEffort(ctx);
     syncEffortUi(ctx, visibleEffort(ctx));
   });
@@ -255,13 +284,13 @@ export default function effortExtension(pi: ExtensionAPI): void {
   // mid-stream change is not misrepresented as affecting in-flight requests.
   pi.on("agent_start", (_event, ctx) => {
     currentModel = ctx.model ?? currentModel;
-    activeRunEffort = pi.getThinkingLevel();
+    activeRunEffort = currentChoice();
     syncEffortUi(ctx, activeRunEffort);
   });
 
   pi.on("turn_start", (_event, ctx) => {
     currentModel = ctx.model ?? currentModel;
-    activeRunEffort ??= pi.getThinkingLevel();
+    activeRunEffort ??= currentChoice();
     syncEffortUi(ctx, activeRunEffort);
   });
 
@@ -308,14 +337,13 @@ export default function effortExtension(pi: ExtensionAPI): void {
       let input = args.trim();
       // Without a UI, select() resolves to undefined; fall through to the usage error instead.
       if (input === "" && ctx.hasUI) {
-        // One picker entry per state: `default` stays a typed alias of `off`.
-        const options = effortOptions(ctx.model).filter((token) => token !== "default");
+        const options = effortOptions(ctx.model);
         if (options.length === 0) {
           ctx.ui.notify(`Thinking not available for ${modelName(ctx.model)}`, "error");
           return;
         }
         const labels = options.map(optionLabel);
-        const picked = await ctx.ui.select(`Effort (current: ${pi.getThinkingLevel()})`, labels);
+        const picked = await ctx.ui.select(`Effort (current: ${currentChoice()})`, labels);
         if (!picked) return;
         input = options[labels.indexOf(picked)] ?? picked;
       }
@@ -334,7 +362,7 @@ export default function effortExtension(pi: ExtensionAPI): void {
         ctx.ui.notify(`Thinking not available for ${modelName(ctx.model)}`, "error");
         return;
       }
-      applySessionLevel(ctx, resolved);
+      applySessionLevel(ctx, resolved, command.kind === "set-default");
     },
   });
 

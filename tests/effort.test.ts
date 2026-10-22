@@ -20,6 +20,7 @@ import {
   resolveEffortLevel,
   resolveMaxLevel,
   resolveMinLevel,
+  stripThinkingOff,
   cycleLevel,
   writeFastMode,
   writeModelEffort,
@@ -64,9 +65,9 @@ test("parseEffortCommand rejects anything outside the minimal surface", () => {
   assert.throws(() => parseEffortCommand("fast on"), /Usage: \/effort/);
 });
 
-test("parseEffortCommand maps off and default to Pi's off state", () => {
+test("parseEffortCommand maps off to Pi's off state and default to the provider default", () => {
   assert.deepEqual(parseEffortCommand("off"), { kind: "set-session", level: "off" });
-  assert.deepEqual(parseEffortCommand(" default "), { kind: "set-session", level: "off" });
+  assert.deepEqual(parseEffortCommand(" default "), { kind: "set-default" });
   assert.throws(() => parseEffortCommand("defualt"), /Did you mean "default"\?/);
 });
 
@@ -75,6 +76,7 @@ test("resolveEffortCommand resolves aliases per model and passes explicit levels
   assert.equal(resolveEffortCommand({ kind: "set-max" }, xhighReasoningModel), "xhigh");
   assert.equal(resolveEffortCommand({ kind: "set-max" }, { id: "plain-model", reasoning: false }), undefined);
   assert.equal(resolveEffortCommand({ kind: "set-session", level: "off" }, standardReasoningModel), "off");
+  assert.equal(resolveEffortCommand({ kind: "set-default" }, standardReasoningModel), "off");
 });
 
 test("parseEffortCommand suggests close matches for effort typos", () => {
@@ -278,6 +280,35 @@ test("writeFastMode preserves unrelated settings and writes pi-effort namespace"
 
   writeFastMode(settingsPath, false);
   assert.equal(getFastMode(settingsPath), false);
+});
+
+// ─── Provider default (issue #8) ─────────────────────────────────────
+
+test("stripThinkingOff removes each API's thinking-off field and keeps the rest", () => {
+  const cases: [Record<string, unknown>, Record<string, unknown>][] = [
+    [{ model: "gpt-5.4", input: [], reasoning: { effort: "none" } }, { model: "gpt-5.4", input: [] }],
+    [{ model: "m", reasoning_effort: "none" }, { model: "m" }],
+    [{ model: "claude", thinking: { type: "disabled" }, max_tokens: 10 }, { model: "claude", max_tokens: 10 }],
+    [{ model: "qwen", enable_thinking: false }, { model: "qwen" }],
+    [
+      { model: "vllm", chat_template_kwargs: { enable_thinking: false, preserve_thinking: true } },
+      { model: "vllm", chat_template_kwargs: { preserve_thinking: true } },
+    ],
+    [
+      { model: "gemini-2.5-pro", config: { thinkingConfig: { thinkingBudget: 0 }, temperature: 0 } },
+      { model: "gemini-2.5-pro", config: { temperature: 0 } },
+    ],
+  ];
+  for (const [payload, expected] of cases) {
+    const before = structuredClone(payload);
+    assert.deepEqual(stripThinkingOff(payload), expected);
+    assert.deepEqual(payload, before, "input payload must not change");
+  }
+});
+
+test("stripThinkingOff returns undefined when there is nothing to strip", () => {
+  assert.equal(stripThinkingOff({ model: "m", input: [] }), undefined);
+  assert.equal(stripThinkingOff({ config: { temperature: 0 } }), undefined);
 });
 
 // ─── Per-model effort memory ─────────────────────────────────────────

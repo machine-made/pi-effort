@@ -29,13 +29,16 @@ No `/effort show`, `/effort options`, `/effort fast`, or `/fast status`. Bare `/
 | max-capable reasoning | `minimal` | `max` | the model's levels up to `max` |
 | max-only reasoning | `max` | `max` | `max` |
 
-`off` and `default` are two names for the same thing: Pi's `off` state. What the provider does
-then depends on its API, as implemented in Pi 0.84:
+`off` and `default` differ:
 
-- OpenAI, Codex, Azure OpenAI, and Bedrock: Pi sends no effort field, so the model's own default
-  effort applies.
-- Anthropic, Google, and OpenAI-compatible hosts with an on/off thinking switch: Pi turns thinking
-  off.
+- `/effort off` turns thinking off. Pi sends an explicit "no thinking" field, for example
+  `reasoning: { effort: "none" }` to OpenAI or `thinking: { type: "disabled" }` to Anthropic.
+- `/effort default` asks the provider for the model's own default effort. Pi has no such level, so
+  the extension runs Pi at `off` and removes those "no thinking" fields from each request. The
+  footer shows `think:default`. Any other level ends it.
+
+Models that cannot turn thinking off (their `thinkingLevelMap` sets `off` to `null`, such as `gpt-5`)
+offer neither.
 
 Examples:
 
@@ -110,8 +113,8 @@ back to that model with `/model` or model cycling. Example: `xhigh` on a GPT mod
 Opus. Switching from GPT to Opus and back gives `medium`, then `xhigh` again, instead of the level
 Pi carried over and clamped.
 
-- A level counts as chosen when you set it with `/effort`, `Ctrl+Shift+E`, or Pi's own thinking
-  selector. The level Pi picks itself when a model cannot run the previous one is not remembered.
+- A level counts as chosen when you set it with `/effort` (including `default`), `Ctrl+Shift+E`,
+  or Pi's own thinking selector. The level Pi picks itself when a model cannot run the previous one is not remembered.
 - A pinned level in `enabledModels` or `--models` (for example `anthropic/*:high`) wins when cycling.
 - A remembered level the model no longer supports is skipped.
 - Startup and resumed sessions keep the level Pi chose (`--effort`, `--thinking`, a `:level` model

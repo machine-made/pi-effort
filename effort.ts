@@ -28,11 +28,11 @@ export const USER_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] 
 export const SEMANTIC_ALIASES = ["min", "max"] as const;
 
 /**
- * Tokens that select Pi's "off" state. In Pi 0.84, OpenAI, Codex, Azure OpenAI, and Bedrock then get
- * no effort field, so the model's own default applies; Anthropic, Google, and on/off
- * OpenAI-compatible hosts run without thinking.
+ * `default` asks the provider for the model's own effort. Pi has no such level: its `off` sends an
+ * explicit "no thinking" field (`reasoning.effort: "none"`, `thinking: { type: "disabled" }`, ...).
+ * So `default` runs Pi at `off` and `stripThinkingOff()` removes those fields from each request.
  */
-export const OFF_TOKENS = ["off", "default"] as const;
+export const DEFAULT_TOKEN = "default";
 
 /** Fast mode subcommands. */
 export const FAST_MODE_ACTIONS = ["on", "off"] as const;
@@ -73,7 +73,11 @@ export function isFastEligible(model: { id?: string; provider?: string } | null 
 export type EffortCommand =
   | { kind: "set-session"; level: EffortLevel }
   | { kind: "set-min" }
-  | { kind: "set-max" };
+  | { kind: "set-max" }
+  | { kind: "set-default" };
+
+/** What can be remembered per model: a level, or the provider's own default. */
+export type EffortChoice = EffortLevel | typeof DEFAULT_TOKEN;
 
 export type FastCommand = { kind: "fast-set"; enabled: boolean } | { kind: "fast-toggle" };
 
@@ -122,7 +126,7 @@ function suggestClosest(input: string, candidates: readonly string[]): string | 
 }
 
 /** All tokens valid as the first argument to /effort. */
-const EFFORT_TOKEN_CANDIDATES = [...USER_LEVELS, ...SEMANTIC_ALIASES, ...OFF_TOKENS];
+const EFFORT_TOKEN_CANDIDATES = [...USER_LEVELS, ...SEMANTIC_ALIASES, "off", DEFAULT_TOKEN];
 
 // ─── Parser ─────────────────────────────────────────────────────────
 
@@ -136,7 +140,8 @@ export function parseEffortCommand(args: string): EffortCommand {
   const [first] = tokens;
   if (first === "max") return { kind: "set-max" };
   if (first === "min") return { kind: "set-min" };
-  if ((OFF_TOKENS as readonly string[]).includes(first)) return { kind: "set-session", level: "off" };
+  if (first === "off") return { kind: "set-session", level: "off" };
+  if (first === DEFAULT_TOKEN) return { kind: "set-default" };
   if (USER_LEVELS.includes(first as ThinkingLevel)) return { kind: "set-session", level: first as EffortLevel };
 
   const suggestion = suggestClosest(first, EFFORT_TOKEN_CANDIDATES);
@@ -201,6 +206,7 @@ export function resolveEffortCommand(
 ): EffortLevel | undefined {
   if (command.kind === "set-min") return resolveMinLevel(model);
   if (command.kind === "set-max") return resolveMaxLevel(model);
+  if (command.kind === "set-default") return "off";
   return command.level;
 }
 
@@ -291,8 +297,8 @@ export type DisplaySettings = {
 /** Everything the UI sync needs from the `pi-effort` block, read in one pass. */
 export type PiEffortSettings = DisplaySettings & {
   fastMode: boolean;
-  /** Last level chosen per model, keyed by `modelKey()`. */
-  modelEffort: Record<string, EffortLevel>;
+  /** Last choice per model, keyed by `modelKey()`. */
+  modelEffort: Record<string, EffortChoice>;
 };
 
 function defaultPiEffortSettings(): PiEffortSettings {
@@ -304,12 +310,12 @@ function defaultPiEffortSettings(): PiEffortSettings {
   };
 }
 
-/** Keep only `model key -> known level` pairs; anything else in the file is ignored. */
-function parseModelEffort(value: unknown): Record<string, EffortLevel> {
+/** Keep only `model key -> known choice` pairs; anything else in the file is ignored. */
+function parseModelEffort(value: unknown): Record<string, EffortChoice> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const result: Record<string, EffortLevel> = {};
-  for (const [key, level] of Object.entries(value)) {
-    if (typeof level === "string" && isEffortLevel(level)) result[key] = level;
+  const result: Record<string, EffortChoice> = {};
+  for (const [key, choice] of Object.entries(value)) {
+    if (typeof choice === "string" && (isEffortLevel(choice) || choice === DEFAULT_TOKEN)) result[key] = choice;
   }
   return result;
 }
@@ -361,7 +367,7 @@ export function modelKey(model: { id?: string; provider?: string } | null | unde
 }
 
 /** Remember `level` for the model. The file is written only when the stored value changes. */
-export function writeModelEffort(settingsPath: string, key: string, level: EffortLevel): void {
+export function writeModelEffort(settingsPath: string, key: string, level: EffortChoice): void {
   updatePiEffortSettings(settingsPath, (piEffort) => {
     const raw = piEffort.modelEffort;
     const modelEffort: Record<string, unknown> =
@@ -371,6 +377,42 @@ export function writeModelEffort(settingsPath: string, key: string, level: Effor
     piEffort.modelEffort = modelEffort;
     return true;
   });
+}
+
+// ─── Provider default ───────────────────────────────────────────────
+
+/** Top-level request fields through which pi-ai 0.84 sends "thinking off", across its APIs. */
+const THINKING_OFF_FIELDS = ["reasoning", "reasoning_effort", "thinking", "enable_thinking"] as const;
+
+/**
+ * Remove the fields that tell the provider to skip thinking, so it applies the model's own default.
+ * Call it only while Pi runs at `off`: then these fields carry nothing but the "off" request.
+ * Returns undefined when the payload has none of them.
+ */
+export function stripThinkingOff(payload: Record<string, unknown>): Record<string, unknown> | undefined {
+  const body: Record<string, unknown> = { ...payload };
+  let changed = false;
+  for (const field of THINKING_OFF_FIELDS) {
+    if (field in body) {
+      delete body[field];
+      changed = true;
+    }
+  }
+  // Chat-template hosts (vLLM, SGLang, Qwen): `chat_template_kwargs.enable_thinking: false`.
+  const kwargs = body.chat_template_kwargs;
+  if (kwargs && typeof kwargs === "object" && !Array.isArray(kwargs) && "enable_thinking" in kwargs) {
+    const { enable_thinking: _off, ...rest } = kwargs as Record<string, unknown>;
+    body.chat_template_kwargs = rest;
+    changed = true;
+  }
+  // Google Gemini and Vertex: `config.thinkingConfig` with a zero budget or minimal level.
+  const config = body.config;
+  if (config && typeof config === "object" && !Array.isArray(config) && "thinkingConfig" in config) {
+    const { thinkingConfig: _off, ...rest } = config as Record<string, unknown>;
+    body.config = rest;
+    changed = true;
+  }
+  return changed ? body : undefined;
 }
 
 // ─── Help text ──────────────────────────────────────────────────────

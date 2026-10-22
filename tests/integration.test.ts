@@ -436,7 +436,7 @@ test("argument completions expose only effort levels and fast on/off", async () 
     assert.deepEqual(topLevel?.map((item) => item.value), ["min", "minimal", "low", "medium", "high", "max", "off", "default"]);
     assert.deepEqual(
       topLevel?.slice(-2).map((item) => item.label),
-      ["off (default)", "default (off)"]
+      ["off (no thinking)", "default (model's own effort)"]
     );
     assert.deepEqual((await command.getArgumentCompletions("d"))?.map((item) => item.value), ["default"]);
     assert.deepEqual((await command.getArgumentCompletions("o"))?.map((item) => item.value), ["off"]);
@@ -507,7 +507,7 @@ test("completions and picker offer min and max for a max-only model", async () =
     } as any);
 
     assert.deepEqual(errors, []);
-    assert.deepEqual(offered, ["min", "max", "off (default)"]);
+    assert.deepEqual(offered, ["min", "max", "off (no thinking)", "default (model's own effort)"]);
     assert.equal(session.thinkingLevel, "max" as ThinkingLevel);
   } finally {
     cleanupSession(previousAgentDir);
@@ -556,7 +556,7 @@ test("bare /effort applies the level picked in the select dialog", async () => {
       },
     } as any);
 
-    assert.deepEqual(offered, ["min", "minimal", "low", "medium", "high", "max", "off (default)"]);
+    assert.deepEqual(offered, ["min", "minimal", "low", "medium", "high", "max", "off (no thinking)", "default (model's own effort)"]);
     assert.equal(session.thinkingLevel, "low" as ThinkingLevel);
   } finally {
     cleanupSession(previousAgentDir);
@@ -687,7 +687,7 @@ test("bare /effort offers xhigh and resolves max for an xhigh-capable model", as
       },
     } as any);
 
-    assert.deepEqual(offered, ["min", "minimal", "low", "medium", "high", "xhigh", "max", "off (default)"]);
+    assert.deepEqual(offered, ["min", "minimal", "low", "medium", "high", "xhigh", "max", "off (no thinking)", "default (model's own effort)"]);
     assert.equal(session.thinkingLevel, "xhigh" as ThinkingLevel);
   } finally {
     cleanupSession(previousAgentDir);
@@ -752,7 +752,7 @@ test("runtime --effort default selects off at startup", async () => {
   }
 });
 
-test("bare /effort picker entry off (default) selects off", async () => {
+test("bare /effort picker entry off (no thinking) selects off", async () => {
   const { session, extension, previousAgentDir } = await createTestSession(reasoningModel, "high", "high");
 
   try {
@@ -763,7 +763,7 @@ test("bare /effort picker entry off (default) selects off", async () => {
       isIdle: () => true,
       hasUI: true,
       ui: {
-        select: async () => "off (default)",
+        select: async () => "off (no thinking)",
         notify: () => {},
         setStatus: () => {},
         setWorkingMessage: () => {},
@@ -961,6 +961,122 @@ test("completions and picker leave out off for a model that cannot turn thinking
     await command.handler("default", ctx);
     assert.equal(session.thinkingLevel, "high" as ThinkingLevel);
     assert.match(errors[0] ?? "", /does not support off/);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+// ─── /effort default: the provider's own effort (issue #8) ──────────
+
+async function sendProviderRequest(
+  extension: { handlers: Map<string, ((event: unknown, ctx: unknown) => unknown)[]> },
+  model: Model<any>,
+  payload: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  let current = payload;
+  for (const handler of extension.handlers.get("before_provider_request") ?? []) {
+    const result = await handler({ type: "before_provider_request", payload: current }, { model });
+    if (result && typeof result === "object") current = result as Record<string, unknown>;
+  }
+  return current;
+}
+
+const OFF_PAYLOAD = { model: "gpt-5.4", input: [], reasoning: { effort: "none" } };
+
+test("runtime /effort default runs Pi at off and strips the off field from requests", async () => {
+  const ui = createRecordingUI();
+  const { session, extension, agentDir, previousAgentDir } = await createTestSession(xhighModel, "high", "high", {}, {
+    uiContext: ui.uiContext,
+  });
+
+  try {
+    await session.prompt("/effort default");
+    assert.equal(session.thinkingLevel, "off" as PiThinkingLevel);
+    assert.deepEqual(await sendProviderRequest(extension as any, xhighModel, OFF_PAYLOAD), { model: "gpt-5.4", input: [] });
+    assert.equal(ui.statuses.get("pi-effort-thinking"), "think:default");
+    assert.deepEqual(readModelEffort(agentDir), { "openai/gpt-5.4": "default" });
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime /effort off keeps the off field, and a real level ends default mode", async () => {
+  const { session, extension, previousAgentDir } = await createTestSession(xhighModel, "high", "high");
+
+  try {
+    await session.prompt("/effort off");
+    assert.deepEqual(await sendProviderRequest(extension as any, xhighModel, OFF_PAYLOAD), OFF_PAYLOAD);
+
+    await session.prompt("/effort default");
+    await session.prompt("/effort high");
+    session.setThinkingLevel("off");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(await sendProviderRequest(extension as any, xhighModel, OFF_PAYLOAD), OFF_PAYLOAD);
+
+    // The same through Pi's own thinking selector: a real level ends default mode.
+    await session.prompt("/effort default");
+    session.setThinkingLevel("high");
+    await new Promise((resolve) => setImmediate(resolve));
+    session.setThinkingLevel("off");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(await sendProviderRequest(extension as any, xhighModel, OFF_PAYLOAD), OFF_PAYLOAD);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime default mode survives a restart through the remembered choice", async () => {
+  const { session, extension, previousAgentDir } = await createTestSession(xhighModel, "off", "off", {}, {
+    piEffortSettings: { modelEffort: { "openai/gpt-5.4": "default" } },
+  });
+
+  try {
+    assert.equal(session.thinkingLevel, "off" as PiThinkingLevel);
+    assert.deepEqual(await sendProviderRequest(extension as any, xhighModel, OFF_PAYLOAD), { model: "gpt-5.4", input: [] });
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime restores default mode on a switch back to the model", async () => {
+  const { session, extension, previousAgentDir } = await createTestSession(xhighModel, "high", "high");
+
+  try {
+    await session.prompt("/effort default");
+    await session.setModel(reasoningModel);
+    await session.prompt("/effort low");
+    await session.setModel(xhighModel);
+    assert.equal(session.thinkingLevel, "off" as PiThinkingLevel);
+    assert.deepEqual(await sendProviderRequest(extension as any, xhighModel, OFF_PAYLOAD), { model: "gpt-5.4", input: [] });
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime --effort default starts in default mode", async () => {
+  const { session, extension, previousAgentDir } = await createTestSession(xhighModel, "high", "high", { effort: "default" });
+
+  try {
+    assert.equal(session.thinkingLevel, "off" as PiThinkingLevel);
+    assert.deepEqual(await sendProviderRequest(extension as any, xhighModel, OFF_PAYLOAD), { model: "gpt-5.4", input: [] });
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime default mode and fast mode both apply to one request", async () => {
+  const fastModel: Model<any> = { ...xhighModel, provider: "openai" };
+  const { session, extension, previousAgentDir } = await createTestSession(fastModel, "high", "high", {}, {
+    piEffortSettings: { fastMode: true },
+  });
+
+  try {
+    await session.prompt("/effort default");
+    assert.deepEqual(await sendProviderRequest(extension as any, fastModel, OFF_PAYLOAD), {
+      model: "gpt-5.4",
+      input: [],
+      service_tier: "priority",
+    });
   } finally {
     cleanupSession(previousAgentDir);
   }
