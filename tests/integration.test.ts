@@ -87,6 +87,8 @@ function makeSessionConfig(piEffortSettings?: Record<string, unknown>) {
   const cwd = join(tempRoot, "cwd");
   mkdirSync(agentDir, { recursive: true });
   mkdirSync(cwd, { recursive: true });
+  // Model switches check auth; a placeholder key keeps the suite independent of the environment.
+  writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ openrouter: { type: "api_key", key: "test-key" } }));
   if (piEffortSettings) {
     writePiEffortSettings(agentDir, piEffortSettings);
   }
