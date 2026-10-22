@@ -1113,3 +1113,19 @@ test("runtime cycling to a model pinned at off ends default mode", async () => {
     cleanupSession(previousAgentDir);
   }
 });
+
+test("runtime default mode does not apply to a non-reasoning model it switches to", async () => {
+  const ui = createRecordingUI();
+  const { session, extension, previousAgentDir } = await createTestSession(xhighModel, "high", "high", {}, {
+    uiContext: ui.uiContext,
+  });
+
+  try {
+    await session.prompt("/effort default");
+    await session.setModel(plainModel);
+    assert.equal(ui.statuses.get("pi-effort-thinking"), "think:off");
+    assert.deepEqual(await sendProviderRequest(extension as any, plainModel, OFF_PAYLOAD), OFF_PAYLOAD);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});

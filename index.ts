@@ -84,10 +84,15 @@ export default function effortExtension(pi: ExtensionAPI): void {
   // `/effort default`: Pi runs at off and before_provider_request strips the off fields.
   let providerDefault = false;
 
-  /** The user's current choice: Pi's level, or `default` while provider-default mode is on. */
+  /** True when requests to `model` should go out without the "no thinking" fields. */
+  function usesProviderDefault(model: EffortModel | null | undefined): boolean {
+    // A non-reasoning model has no thinking to default to; the mode waits for a reasoning model.
+    return providerDefault && pi.getThinkingLevel() === "off" && model?.reasoning === true;
+  }
+
+  /** The user's current choice: Pi's level, or `default` while provider-default mode applies. */
   function currentChoice(): EffortChoice {
-    const level = pi.getThinkingLevel() as EffortLevel;
-    return providerDefault && level === "off" ? DEFAULT_TOKEN : level;
+    return usesProviderDefault(currentModel) ? DEFAULT_TOKEN : (pi.getThinkingLevel() as EffortLevel);
   }
 
   function refreshFastMode(): boolean {
@@ -169,7 +174,7 @@ export default function effortExtension(pi: ExtensionAPI): void {
 
     const body = payload as Record<string, unknown>;
     let next = body;
-    if (providerDefault && pi.getThinkingLevel() === "off") {
+    if (usesProviderDefault(ctx.model)) {
       next = stripThinkingOff(next) ?? next;
     }
 
