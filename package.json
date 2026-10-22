@@ -1,0 +1,58 @@
+{
+  "name": "pi-effort",
+  "version": "0.0.8",
+  "author": "Ricardo A S Frantz",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ricardofrantz/pi-effort.git"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "0.84.2",
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  },
+  "bugs": {
+    "url": "https://github.com/ricardofrantz/pi-effort/issues"
+  },
+  "description": "Pi extension for controlling thinking effort with model-adaptive min/max aliases",
+  "files": [
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "effort.ts",
+    "index.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "homepage": "https://github.com/ricardofrantz/pi-effort#readme",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi",
+    "pi-coding-agent",
+    "llm",
+    "developer-tools",
+    "command-line",
+    "productivity",
+    "reasoning",
+    "thinking",
+    "effort"
+  ],
+  "license": "Apache-2.0",
+  "peerDependencies": {
+    "@earendil-works/pi-ai": ">=0.84.0 <1.0.0",
+    "@earendil-works/pi-coding-agent": ">=0.84.0 <1.0.0"
+  },
+  "packageManager": "bun@1.3.13",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "type": "module"
+}

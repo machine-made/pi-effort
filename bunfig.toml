@@ -1,0 +1,4 @@
+# Same policy as house pnpm: 5-day quarantine, Pi packages excluded.
+[install]
+minimumReleaseAge = 432000
+minimumReleaseAgeExcludes = ["@earendil-works/*"]
