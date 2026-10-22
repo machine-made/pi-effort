@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+- `showModelEffortInWorkingMessage` setting turns off the `Working (<level> effort)...` message.
+- `showModelEffortInFooter` setting hides the `think:<level>` and `fast` footer statuses.
+
 ## [0.0.8] - 2026-08-15
 
 ### Added

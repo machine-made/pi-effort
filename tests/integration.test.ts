@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Model, ThinkingLevel } from "@earendil-works/pi-ai";
@@ -9,6 +9,7 @@ import {
   createEventBus,
   SessionManager,
   SettingsManager,
+  type ExtensionUIContext,
   type LoadExtensionsResult,
   type ResourceLoader,
 } from "@earendil-works/pi-coding-agent";
@@ -76,12 +77,19 @@ function createResourceLoader(extensionsResult: LoadExtensionsResult): ResourceL
   };
 }
 
-function makeSessionConfig() {
+function writePiEffortSettings(agentDir: string, piEffortSettings: Record<string, unknown>): void {
+  writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ "pi-effort": piEffortSettings }));
+}
+
+function makeSessionConfig(piEffortSettings?: Record<string, unknown>) {
   const tempRoot = mkdtempSync(join(tmpdir(), "pi-effort-runtime-"));
   const agentDir = join(tempRoot, "agent");
   const cwd = join(tempRoot, "cwd");
   mkdirSync(agentDir, { recursive: true });
   mkdirSync(cwd, { recursive: true });
+  if (piEffortSettings) {
+    writePiEffortSettings(agentDir, piEffortSettings);
+  }
 
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -101,13 +109,41 @@ function makeSessionConfig() {
   };
 }
 
+interface RecordingUI {
+  uiContext: ExtensionUIContext;
+  statuses: Map<string, string | undefined>;
+  workingMessages: (string | undefined)[];
+}
+
+function createRecordingUI(): RecordingUI {
+  const statuses = new Map<string, string | undefined>();
+  const workingMessages: (string | undefined)[] = [];
+  const recorded: Partial<ExtensionUIContext> = {
+    setStatus: (key, text) => statuses.set(key, text),
+    setWorkingMessage: (message) => workingMessages.push(message),
+  };
+  const nonMethodProperties = new Set<PropertyKey>(["then", "theme"]);
+  const uiContext = new Proxy(recorded, {
+    get: (target, property) =>
+      target[property as keyof ExtensionUIContext] ??
+      (nonMethodProperties.has(property) ? undefined : () => undefined),
+  }) as ExtensionUIContext;
+  return { uiContext, statuses, workingMessages };
+}
+
+interface TestSessionOptions {
+  piEffortSettings?: Record<string, unknown>;
+  uiContext?: ExtensionUIContext;
+}
+
 async function createTestSession(
   model: Model<any>,
   thinkingLevel: PiThinkingLevel,
   defaultThinkingLevel?: PiThinkingLevel,
-  flags: Record<string, boolean | string> = {}
+  flags: Record<string, boolean | string> = {},
+  options: TestSessionOptions = {}
 ) {
-  const config = makeSessionConfig();
+  const config = makeSessionConfig(options.piEffortSettings);
   const extension = await config.extensionPromise;
   for (const [name, value] of Object.entries(flags)) {
     config.runtime.flagValues.set(name, value);
@@ -131,7 +167,7 @@ async function createTestSession(
     sessionManager,
     resourceLoader,
   });
-  await session.bindExtensions({});
+  await session.bindExtensions({ uiContext: options.uiContext });
 
   return { session, extension, agentDir: config.agentDir, previousAgentDir: config.previousAgentDir };
 }
@@ -364,6 +400,79 @@ test("argument completions expose only effort levels and fast on/off", async () 
     assert.ok(fastCommand?.getArgumentCompletions);
     const fastCommandOptions = await fastCommand.getArgumentCompletions("");
     assert.deepEqual(fastCommandOptions?.map((item) => item.value), ["on", "off"]);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+// ─── Display settings tests ─────────────────────────────────────────
+
+test("runtime shows effort in the footer and working message by default", async () => {
+  const ui = createRecordingUI();
+  const { session, previousAgentDir } = await createTestSession(xhighModel, "medium", "medium", {}, {
+    piEffortSettings: { fastMode: true },
+    uiContext: ui.uiContext,
+  });
+
+  try {
+    await session.prompt("/effort high");
+    assert.equal(ui.statuses.get("pi-effort-thinking"), "think:high");
+    assert.equal(ui.statuses.get("pi-effort-fast"), "fast");
+    assert.equal(ui.workingMessages.at(-1), "Working (high effort)...");
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime showModelEffortInFooter false hides the thinking and fast statuses", async () => {
+  const ui = createRecordingUI();
+  const { session, previousAgentDir } = await createTestSession(xhighModel, "medium", "medium", {}, {
+    piEffortSettings: { fastMode: true, showModelEffortInFooter: false },
+    uiContext: ui.uiContext,
+  });
+
+  try {
+    await session.prompt("/effort high");
+    assert.equal(ui.statuses.has("pi-effort-thinking"), true);
+    assert.equal(ui.statuses.get("pi-effort-thinking"), undefined);
+    assert.equal(ui.statuses.get("pi-effort-fast"), undefined);
+    assert.equal(ui.workingMessages.at(-1), "Working (high effort)...");
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime showModelEffortInWorkingMessage false leaves the working message alone", async () => {
+  const ui = createRecordingUI();
+  const { session, previousAgentDir } = await createTestSession(xhighModel, "medium", "medium", {}, {
+    piEffortSettings: { showModelEffortInWorkingMessage: false },
+    uiContext: ui.uiContext,
+  });
+
+  try {
+    await session.prompt("/effort high");
+    assert.deepEqual(ui.workingMessages, []);
+    assert.equal(ui.statuses.get("pi-effort-thinking"), "think:high");
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime picks up showModelEffortInFooter changes mid-session", async () => {
+  const ui = createRecordingUI();
+  const { session, agentDir, previousAgentDir } = await createTestSession(xhighModel, "medium", "medium", {}, {
+    piEffortSettings: { fastMode: true },
+    uiContext: ui.uiContext,
+  });
+
+  try {
+    await session.prompt("/effort high");
+    assert.equal(ui.statuses.get("pi-effort-thinking"), "think:high");
+
+    writePiEffortSettings(agentDir, { fastMode: true, showModelEffortInFooter: false });
+    await session.prompt("/effort low");
+    assert.equal(ui.statuses.get("pi-effort-thinking"), undefined);
+    assert.equal(ui.statuses.get("pi-effort-fast"), undefined);
   } finally {
     cleanupSession(previousAgentDir);
   }

@@ -3,11 +3,13 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@e
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
   USER_LEVELS,
+  type DisplaySettings,
   type EffortLevel,
   type EffortModel,
   cycleLevel,
   getAvailableThinkingLevels,
   FAST_ON_NOTICE,
+  getDisplaySettings,
   getFastMode,
   getUserFacingLevels,
   isFastEligible,
@@ -33,19 +35,28 @@ function isFastModelId(modelId: string): boolean {
   return modelId.startsWith("gpt-5");
 }
 
-function updateEffortUi(ctx: ExtensionContext, current: string, fastMode: boolean, updateWorkingMessage = true): void {
-  ctx.ui.setStatus("pi-effort-thinking", `think:${current}`);
-  ctx.ui.setStatus("pi-effort-fast", fastMode && isFastEligible(ctx.model) ? "fast" : undefined);
-  if (updateWorkingMessage) {
+function updateEffortUi(
+  ctx: ExtensionContext,
+  current: string,
+  fastMode: boolean,
+  display: DisplaySettings,
+  updateWorkingMessage = true
+): void {
+  const showFooter = display.showModelEffortInFooter;
+  ctx.ui.setStatus("pi-effort-thinking", showFooter ? `think:${current}` : undefined);
+  ctx.ui.setStatus("pi-effort-fast", showFooter && fastMode && isFastEligible(ctx.model) ? "fast" : undefined);
+  if (updateWorkingMessage && display.showModelEffortInWorkingMessage) {
     ctx.ui.setWorkingMessage(current === "off" ? undefined : `Working (${current} effort)...`);
   }
 }
+
+type SyncEffortUi = (ctx: ExtensionContext, current?: string, updateWorkingMessage?: boolean) => string;
 
 function applySessionLevel(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
   level: EffortLevel,
-  fastMode: boolean
+  syncEffortUi: SyncEffortUi
 ): void {
   const available = getAvailableThinkingLevels(ctx.model);
   if (!available.includes(level)) {
@@ -60,7 +71,7 @@ function applySessionLevel(
   pi.setThinkingLevel(toThinkingLevel(level));
   const after = pi.getThinkingLevel();
   const appliesNow = ctx.isIdle();
-  updateEffortUi(ctx, after, fastMode, appliesNow);
+  syncEffortUi(ctx, after, appliesNow);
   const suffix = appliesNow ? "" : " (applies next prompt)";
   ctx.ui.notify(before === after ? `Effort already ${after}` : `Effort changed: ${before} -> ${after}${suffix}`, "info");
 }
@@ -78,8 +89,12 @@ export default function effortExtension(pi: ExtensionAPI): void {
     return fastMode;
   }
 
-  function syncEffortUi(ctx: ExtensionContext, current: string = pi.getThinkingLevel()): string {
-    updateEffortUi(ctx, current, refreshFastMode());
+  function syncEffortUi(
+    ctx: ExtensionContext,
+    current: string = pi.getThinkingLevel(),
+    updateWorkingMessage = true
+  ): string {
+    updateEffortUi(ctx, current, refreshFastMode(), getDisplaySettings(settingsPath), updateWorkingMessage);
     return current;
   }
 
@@ -124,7 +139,7 @@ export default function effortExtension(pi: ExtensionAPI): void {
       pi.setThinkingLevel(toThinkingLevel(next));
       const after = pi.getThinkingLevel();
       const appliesNow = ctx.isIdle();
-      updateEffortUi(ctx, after, refreshFastMode(), appliesNow);
+      syncEffortUi(ctx, after, appliesNow);
       const suffix = appliesNow ? "" : " (applies next prompt)";
       ctx.ui.notify(`Effort: ${current} -> ${after}${suffix}`, "info");
     },
@@ -244,7 +259,7 @@ export default function effortExtension(pi: ExtensionAPI): void {
 
       switch (command.kind) {
         case "set-session":
-          applySessionLevel(pi, ctx, command.level, refreshFastMode());
+          applySessionLevel(pi, ctx, command.level, syncEffortUi);
           return;
 
         case "set-min": {
@@ -253,7 +268,7 @@ export default function effortExtension(pi: ExtensionAPI): void {
             ctx.ui.notify(`Thinking not available for ${modelName(ctx.model)}`, "error");
             return;
           }
-          applySessionLevel(pi, ctx, resolved, refreshFastMode());
+          applySessionLevel(pi, ctx, resolved, syncEffortUi);
           return;
         }
 
@@ -263,7 +278,7 @@ export default function effortExtension(pi: ExtensionAPI): void {
             ctx.ui.notify(`Thinking not available for ${modelName(ctx.model)}`, "error");
             return;
           }
-          applySessionLevel(pi, ctx, resolved, refreshFastMode());
+          applySessionLevel(pi, ctx, resolved, syncEffortUi);
           return;
         }
       }

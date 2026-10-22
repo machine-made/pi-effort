@@ -67,6 +67,24 @@ For compact powerline footers, the extension publishes these status keys:
 - `pi-effort-thinking` — `think:<level>`
 - `pi-effort-fast` — `fast` only when fast mode is enabled and applies to the current model
 
+## Display settings
+
+The extension also sets the working message to `Working (<level> effort)...`. Turn off either display in `~/.pi/agent/settings.json`:
+
+```json
+{
+  "pi-effort": {
+    "showModelEffortInWorkingMessage": false,
+    "showModelEffortInFooter": false
+  }
+}
+```
+
+- `showModelEffortInWorkingMessage: false` — the extension does not touch the working message. A message it already set stays until Pi restarts.
+- `showModelEffortInFooter: false` — the extension clears both footer status keys.
+
+Both default to `true`. Only an explicit `false` hides a display.
+
 ## Keyboard shortcut
 
 `Ctrl+Shift+E` cycles through the current model's reasoning levels.
