@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ## [Unreleased]
 
 ### Added
+- `/effort off` and `/effort default` select Pi's `off` state. They also work in completions, the picker, and `--effort` (#8).
+- The extension remembers the last level chosen per model and restores it on a model switch. A scoped pin wins. Levels are stored under `pi-effort.modelEffort` (#4).
 - `showModelEffortInWorkingMessage` setting turns off the `Working (<level> effort)...` message.
 - `showModelEffortInFooter` setting hides the `think:<level>` and `fast` footer statuses.
 - Bare `/effort` opens a select dialog with the current model's levels instead of failing with the usage error.

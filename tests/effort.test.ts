@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { lstatSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { ThinkingLevel } from "@earendil-works/pi-ai";
@@ -11,14 +11,18 @@ import {
   getAvailableThinkingLevels,
   getDisplaySettings,
   getFastMode,
+  getPiEffortSettings,
   getUserFacingLevels,
+  modelKey,
   parseEffortCommand,
   parseFastCommand,
+  resolveEffortCommand,
   resolveEffortLevel,
   resolveMaxLevel,
   resolveMinLevel,
   cycleLevel,
   writeFastMode,
+  writeModelEffort,
   isFastEligible,
 } from "../effort.ts";
 
@@ -54,11 +58,23 @@ test("parseEffortCommand handles min and max aliases", () => {
 
 test("parseEffortCommand rejects anything outside the minimal surface", () => {
   assert.throws(() => parseEffortCommand(""), /Usage: \/effort/);
-  assert.throws(() => parseEffortCommand("off"), /Unknown effort level/);
   assert.throws(() => parseEffortCommand("show"), /Unknown effort level/);
   assert.throws(() => parseEffortCommand("options"), /Unknown effort level/);
   assert.throws(() => parseEffortCommand("default high"), /Usage: \/effort/);
   assert.throws(() => parseEffortCommand("fast on"), /Usage: \/effort/);
+});
+
+test("parseEffortCommand maps off and default to Pi's off state", () => {
+  assert.deepEqual(parseEffortCommand("off"), { kind: "set-session", level: "off" });
+  assert.deepEqual(parseEffortCommand(" default "), { kind: "set-session", level: "off" });
+  assert.throws(() => parseEffortCommand("defualt"), /Did you mean "default"\?/);
+});
+
+test("resolveEffortCommand resolves aliases per model and passes explicit levels through", () => {
+  assert.equal(resolveEffortCommand({ kind: "set-min" }, xhighReasoningModel), "minimal");
+  assert.equal(resolveEffortCommand({ kind: "set-max" }, xhighReasoningModel), "xhigh");
+  assert.equal(resolveEffortCommand({ kind: "set-max" }, { id: "plain-model", reasoning: false }), undefined);
+  assert.equal(resolveEffortCommand({ kind: "set-session", level: "off" }, standardReasoningModel), "off");
 });
 
 test("parseEffortCommand suggests close matches for effort typos", () => {
@@ -264,6 +280,61 @@ test("writeFastMode preserves unrelated settings and writes pi-effort namespace"
   assert.equal(getFastMode(settingsPath), false);
 });
 
+// ─── Per-model effort memory ─────────────────────────────────────────
+
+test("modelKey joins provider and id, and is undefined without a model id", () => {
+  assert.equal(modelKey({ id: "gpt-5.4", provider: "openai" }), "openai/gpt-5.4");
+  assert.equal(modelKey({ id: "local" }), "/local");
+  assert.equal(modelKey(null), undefined);
+  assert.equal(modelKey({ provider: "openai" }), undefined);
+});
+
+test("writeModelEffort keeps unrelated settings and fast mode", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-effort-"));
+  const settingsPath = join(dir, "settings.json");
+  writeFileSync(settingsPath, JSON.stringify({ defaultProvider: "openai", "pi-effort": { fastMode: true } }));
+
+  writeModelEffort(settingsPath, "openai/gpt-5.4", "xhigh");
+  writeModelEffort(settingsPath, "anthropic/claude-opus-4.6", "medium");
+
+  const parsed = JSON.parse(readFileSync(settingsPath, "utf-8"));
+  assert.equal(parsed.defaultProvider, "openai");
+  assert.equal(parsed["pi-effort"].fastMode, true);
+  assert.deepEqual(getPiEffortSettings(settingsPath).modelEffort, {
+    "openai/gpt-5.4": "xhigh",
+    "anthropic/claude-opus-4.6": "medium",
+  });
+});
+
+test("writeModelEffort leaves the file untouched when the level is already stored", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-effort-"));
+  const settingsPath = join(dir, "settings.json");
+  writeModelEffort(settingsPath, "openai/gpt-5.4", "high");
+  const before = statSync(settingsPath).ino;
+
+  writeModelEffort(settingsPath, "openai/gpt-5.4", "high");
+  assert.equal(statSync(settingsPath).ino, before);
+
+  writeModelEffort(settingsPath, "openai/gpt-5.4", "low");
+  assert.notEqual(statSync(settingsPath).ino, before);
+});
+
+test("getPiEffortSettings ignores malformed modelEffort entries", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-effort-"));
+  const settingsPath = join(dir, "settings.json");
+  writeFileSync(
+    settingsPath,
+    JSON.stringify({ "pi-effort": { modelEffort: { "a/x": "high", "a/y": "turbo", "a/z": 3 } } })
+  );
+  assert.deepEqual(getPiEffortSettings(settingsPath).modelEffort, { "a/x": "high" });
+
+  writeFileSync(settingsPath, JSON.stringify({ "pi-effort": { modelEffort: ["high"] } }));
+  assert.deepEqual(getPiEffortSettings(settingsPath).modelEffort, {});
+
+  writeFileSync(settingsPath, "{not json}");
+  assert.deepEqual(getPiEffortSettings(settingsPath).modelEffort, {});
+});
+
 test("isFastEligible requires an OpenAI-family provider and a gpt-5 model id", () => {
   assert.equal(isFastEligible({ id: "gpt-5.4", provider: "openai" }), true);
   assert.equal(isFastEligible({ id: "gpt-5.4", provider: "openai-codex" }), true);
@@ -322,7 +393,8 @@ test("USAGE exposes only effort and fast primitives", () => {
   assert.match(USAGE, /min/);
   assert.match(USAGE, /max/);
   assert.match(USAGE, /\/effort/);
-  assert.doesNotMatch(USAGE, /default|options|show|fast/);
+  assert.match(USAGE, /\|off\|default\]/);
+  assert.doesNotMatch(USAGE, /options|show|fast/);
   assert.equal(FAST_USAGE, "Usage: /fast [on|off]");
 });
 

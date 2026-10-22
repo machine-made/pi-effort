@@ -27,6 +27,12 @@ export const USER_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] 
 /** Semantic aliases that resolve per-model. */
 export const SEMANTIC_ALIASES = ["min", "max"] as const;
 
+/**
+ * Tokens that select Pi's "off" state. Pi then sends no reasoning effort: OpenAI-family APIs apply
+ * the model's own default, and Anthropic, Google, and Bedrock run without thinking.
+ */
+export const OFF_TOKENS = ["off", "default"] as const;
+
 /** Fast mode subcommands. */
 export const FAST_MODE_ACTIONS = ["on", "off"] as const;
 
@@ -115,7 +121,7 @@ function suggestClosest(input: string, candidates: readonly string[]): string | 
 }
 
 /** All tokens valid as the first argument to /effort. */
-const EFFORT_TOKEN_CANDIDATES = [...USER_LEVELS, ...SEMANTIC_ALIASES];
+const EFFORT_TOKEN_CANDIDATES = [...USER_LEVELS, ...SEMANTIC_ALIASES, ...OFF_TOKENS];
 
 // ─── Parser ─────────────────────────────────────────────────────────
 
@@ -129,6 +135,7 @@ export function parseEffortCommand(args: string): EffortCommand {
   const [first] = tokens;
   if (first === "max") return { kind: "set-max" };
   if (first === "min") return { kind: "set-min" };
+  if ((OFF_TOKENS as readonly string[]).includes(first)) return { kind: "set-session", level: "off" };
   if (USER_LEVELS.includes(first as ThinkingLevel)) return { kind: "set-session", level: first as EffortLevel };
 
   const suggestion = suggestClosest(first, EFFORT_TOKEN_CANDIDATES);
@@ -184,6 +191,16 @@ export function resolveMaxLevel(model: EffortModel | null | undefined): EffortLe
   if (!model?.reasoning) return undefined;
   const levels = getUserFacingLevels(model);
   return levels[levels.length - 1];
+}
+
+/** Resolve a parsed `/effort` command to a level for the model. Undefined: thinking unavailable. */
+export function resolveEffortCommand(
+  command: EffortCommand,
+  model: EffortModel | null | undefined
+): EffortLevel | undefined {
+  if (command.kind === "set-min") return resolveMinLevel(model);
+  if (command.kind === "set-max") return resolveMaxLevel(model);
+  return command.level;
 }
 
 /** Resolve a user-facing level or semantic alias against the active model. */
@@ -273,15 +290,30 @@ export type DisplaySettings = {
 /** Everything the UI sync needs from the `pi-effort` block, read in one pass. */
 export type PiEffortSettings = DisplaySettings & {
   fastMode: boolean;
+  /** Last level chosen per model, keyed by `modelKey()`. */
+  modelEffort: Record<string, EffortLevel>;
 };
 
-const DEFAULT_PI_EFFORT_SETTINGS: PiEffortSettings = {
-  fastMode: false,
-  showModelEffortInWorkingMessage: true,
-  showModelEffortInFooter: true,
-};
+function defaultPiEffortSettings(): PiEffortSettings {
+  return {
+    fastMode: false,
+    showModelEffortInWorkingMessage: true,
+    showModelEffortInFooter: true,
+    modelEffort: {},
+  };
+}
 
-/** A missing or corrupt settings file yields the defaults: fast off, every display shown. */
+/** Keep only `model key -> known level` pairs; anything else in the file is ignored. */
+function parseModelEffort(value: unknown): Record<string, EffortLevel> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const result: Record<string, EffortLevel> = {};
+  for (const [key, level] of Object.entries(value)) {
+    if (typeof level === "string" && isEffortLevel(level)) result[key] = level;
+  }
+  return result;
+}
+
+/** A missing or corrupt settings file yields the defaults: fast off, every display shown, nothing remembered. */
 export function getPiEffortSettings(settingsPath: string): PiEffortSettings {
   try {
     const piEffort = readPiEffortSettings(readSettingsObject(settingsPath));
@@ -289,9 +321,10 @@ export function getPiEffortSettings(settingsPath: string): PiEffortSettings {
       fastMode: piEffort.fastMode === true,
       showModelEffortInWorkingMessage: piEffort.showModelEffortInWorkingMessage !== false,
       showModelEffortInFooter: piEffort.showModelEffortInFooter !== false,
+      modelEffort: parseModelEffort(piEffort.modelEffort),
     };
   } catch {
-    return { ...DEFAULT_PI_EFFORT_SETTINGS };
+    return defaultPiEffortSettings();
   }
 }
 
@@ -304,15 +337,42 @@ export function getDisplaySettings(settingsPath: string): DisplaySettings {
   return { showModelEffortInWorkingMessage, showModelEffortInFooter };
 }
 
-export function writeFastMode(settingsPath: string, enabled: boolean): void {
+/** Read settings.json, let `update` change the `pi-effort` block, write it back if `update` returns true. */
+function updatePiEffortSettings(settingsPath: string, update: (piEffort: Record<string, unknown>) => boolean): void {
   const settings = readSettingsObject(settingsPath);
   const piEffort = readPiEffortSettings(settings);
-  piEffort.fastMode = enabled;
+  if (!update(piEffort)) return;
   settings["pi-effort"] = piEffort;
   writeSettingsObject(settingsPath, settings);
 }
 
+export function writeFastMode(settingsPath: string, enabled: boolean): void {
+  updatePiEffortSettings(settingsPath, (piEffort) => {
+    piEffort.fastMode = enabled;
+    return true;
+  });
+}
+
+/** Stable per-model key, `provider/id`. Undefined when no model is active. */
+export function modelKey(model: { id?: string; provider?: string } | null | undefined): string | undefined {
+  if (!model?.id) return undefined;
+  return `${model.provider ?? ""}/${model.id}`;
+}
+
+/** Remember `level` for the model. The file is written only when the stored value changes. */
+export function writeModelEffort(settingsPath: string, key: string, level: EffortLevel): void {
+  updatePiEffortSettings(settingsPath, (piEffort) => {
+    const raw = piEffort.modelEffort;
+    const modelEffort: Record<string, unknown> =
+      raw && typeof raw === "object" && !Array.isArray(raw) ? { ...(raw as Record<string, unknown>) } : {};
+    if (modelEffort[key] === level) return false;
+    modelEffort[key] = level;
+    piEffort.modelEffort = modelEffort;
+    return true;
+  });
+}
+
 // ─── Help text ──────────────────────────────────────────────────────
 
-export const USAGE = "Usage: /effort [min|minimal|low|medium|high|xhigh|max]";
+export const USAGE = "Usage: /effort [min|minimal|low|medium|high|xhigh|max|off|default]";
 export const FAST_USAGE = "Usage: /fast [on|off]";

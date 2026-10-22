@@ -117,7 +117,13 @@ function makeSessionConfig(piEffortSettings?: Record<string, unknown>) {
   mkdirSync(agentDir, { recursive: true });
   mkdirSync(cwd, { recursive: true });
   // Model switches check auth; a placeholder key keeps the suite independent of the environment.
-  writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ openrouter: { type: "api_key", key: "test-key" } }));
+  writeFileSync(
+    join(agentDir, "auth.json"),
+    JSON.stringify({
+      openrouter: { type: "api_key", key: "test-key" },
+      openai: { type: "api_key", key: "test-key" },
+    })
+  );
   if (piEffortSettings) {
     writePiEffortSettings(agentDir, piEffortSettings);
   }
@@ -144,14 +150,17 @@ interface RecordingUI {
   uiContext: ExtensionUIContext;
   statuses: Map<string, string | undefined>;
   workingMessages: (string | undefined)[];
+  notices: string[];
 }
 
 function createRecordingUI(): RecordingUI {
   const statuses = new Map<string, string | undefined>();
   const workingMessages: (string | undefined)[] = [];
+  const notices: string[] = [];
   const recorded: Partial<ExtensionUIContext> = {
     setStatus: (key, text) => statuses.set(key, text),
     setWorkingMessage: (message) => workingMessages.push(message),
+    notify: (message) => notices.push(message),
   };
   const nonMethodProperties = new Set<PropertyKey>(["then", "theme"]);
   const uiContext = new Proxy(recorded, {
@@ -159,12 +168,13 @@ function createRecordingUI(): RecordingUI {
       target[property as keyof ExtensionUIContext] ??
       (nonMethodProperties.has(property) ? undefined : () => undefined),
   }) as ExtensionUIContext;
-  return { uiContext, statuses, workingMessages };
+  return { uiContext, statuses, workingMessages, notices };
 }
 
 interface TestSessionOptions {
   piEffortSettings?: Record<string, unknown>;
   uiContext?: ExtensionUIContext;
+  scopedModels?: { model: Model<any>; thinkingLevel?: PiThinkingLevel }[];
 }
 
 async function createTestSession(
@@ -197,6 +207,7 @@ async function createTestSession(
     settingsManager,
     sessionManager,
     resourceLoader,
+    scopedModels: options.scopedModels,
   });
   await session.bindExtensions({ uiContext: options.uiContext });
 
@@ -422,7 +433,13 @@ test("argument completions expose only effort levels and fast on/off", async () 
     assert.ok(command?.getArgumentCompletions);
 
     const topLevel = await command.getArgumentCompletions("");
-    assert.deepEqual(topLevel?.map((item) => item.value), ["min", "minimal", "low", "medium", "high", "max"]);
+    assert.deepEqual(topLevel?.map((item) => item.value), ["min", "minimal", "low", "medium", "high", "max", "off", "default"]);
+    assert.deepEqual(
+      topLevel?.slice(-2).map((item) => item.label),
+      ["off (default)", "default (off)"]
+    );
+    assert.deepEqual((await command.getArgumentCompletions("d"))?.map((item) => item.value), ["default"]);
+    assert.deepEqual((await command.getArgumentCompletions("o"))?.map((item) => item.value), ["off"]);
 
     assert.equal(await command.getArgumentCompletions("default "), null);
     assert.equal(await command.getArgumentCompletions("fast "), null);
@@ -468,7 +485,7 @@ test("completions and picker offer min and max for a max-only model", async () =
     assert.ok(command?.getArgumentCompletions && command.handler);
 
     const completions = await command.getArgumentCompletions("");
-    assert.deepEqual(completions?.map((item) => item.value), ["min", "max"]);
+    assert.deepEqual(completions?.map((item) => item.value), ["min", "max", "off", "default"]);
 
     let offered: string[] | undefined;
     const errors: string[] = [];
@@ -490,7 +507,7 @@ test("completions and picker offer min and max for a max-only model", async () =
     } as any);
 
     assert.deepEqual(errors, []);
-    assert.deepEqual(offered, ["min", "max"]);
+    assert.deepEqual(offered, ["min", "max", "off (default)"]);
     assert.equal(session.thinkingLevel, "max" as ThinkingLevel);
   } finally {
     cleanupSession(previousAgentDir);
@@ -539,7 +556,7 @@ test("bare /effort applies the level picked in the select dialog", async () => {
       },
     } as any);
 
-    assert.deepEqual(offered, ["min", "minimal", "low", "medium", "high", "max"]);
+    assert.deepEqual(offered, ["min", "minimal", "low", "medium", "high", "max", "off (default)"]);
     assert.equal(session.thinkingLevel, "low" as ThinkingLevel);
   } finally {
     cleanupSession(previousAgentDir);
@@ -670,7 +687,7 @@ test("bare /effort offers xhigh and resolves max for an xhigh-capable model", as
       },
     } as any);
 
-    assert.deepEqual(offered, ["min", "minimal", "low", "medium", "high", "xhigh", "max"]);
+    assert.deepEqual(offered, ["min", "minimal", "low", "medium", "high", "xhigh", "max", "off (default)"]);
     assert.equal(session.thinkingLevel, "xhigh" as ThinkingLevel);
   } finally {
     cleanupSession(previousAgentDir);
@@ -706,6 +723,175 @@ test("bare /effort without a UI reports usage and leaves the level unchanged", a
     assert.equal(selectCalled, false);
     assert.deepEqual(errors, [USAGE]);
     assert.equal(session.thinkingLevel, "medium" as ThinkingLevel);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+// ─── /effort off and /effort default (issue #8) ─────────────────────
+
+test("runtime /effort off and /effort default both select Pi's off state", async () => {
+  for (const token of ["off", "default"]) {
+    const { session, previousAgentDir } = await createTestSession(reasoningModel, "high", "high");
+    try {
+      await session.prompt(`/effort ${token}`);
+      assert.equal(session.thinkingLevel, "off" as PiThinkingLevel, token);
+    } finally {
+      cleanupSession(previousAgentDir);
+    }
+  }
+});
+
+test("runtime --effort default selects off at startup", async () => {
+  const { session, previousAgentDir } = await createTestSession(reasoningModel, "high", "high", { effort: "default" });
+
+  try {
+    assert.equal(session.thinkingLevel, "off" as PiThinkingLevel);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("bare /effort picker entry off (default) selects off", async () => {
+  const { session, extension, previousAgentDir } = await createTestSession(reasoningModel, "high", "high");
+
+  try {
+    const command = extension.commands.get("effort");
+    assert.ok(command?.handler);
+    await command.handler("", {
+      model: reasoningModel,
+      isIdle: () => true,
+      hasUI: true,
+      ui: {
+        select: async () => "off (default)",
+        notify: () => {},
+        setStatus: () => {},
+        setWorkingMessage: () => {},
+      },
+    } as any);
+    assert.equal(session.thinkingLevel, "off" as PiThinkingLevel);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+// ─── Per-model effort memory (issue #4) ─────────────────────────────
+
+function readModelEffort(agentDir: string): Record<string, string> | undefined {
+  return JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"))["pi-effort"]?.modelEffort;
+}
+
+test("runtime restores a model's remembered effort after a clamping switch", async () => {
+  const ui = createRecordingUI();
+  const { session, agentDir, previousAgentDir } = await createTestSession(xhighModel, "medium", "medium", {}, {
+    uiContext: ui.uiContext,
+  });
+
+  try {
+    await session.prompt("/effort xhigh");
+    await session.setModel(reasoningModel);
+    assert.equal(session.thinkingLevel, "high" as ThinkingLevel);
+    // The clamp to high is Pi's, not the user's: nothing is remembered for the new model.
+    assert.deepEqual(readModelEffort(agentDir), { "openai/gpt-5.4": "xhigh" });
+
+    await session.setModel(xhighModel);
+    assert.equal(session.thinkingLevel, "xhigh" as ThinkingLevel);
+    assert.equal(ui.notices.filter((notice) => notice === "Effort xhigh restored for gpt-5.4").length, 1);
+    assert.equal(ui.statuses.get("pi-effort-thinking"), "think:xhigh");
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime applies a remembered level when switching to that model", async () => {
+  const { session, previousAgentDir } = await createTestSession(xhighModel, "high", "high", {}, {
+    piEffortSettings: { modelEffort: { "openrouter/minimax/minimax-m2.7": "low" } },
+  });
+
+  try {
+    await session.setModel(reasoningModel);
+    assert.equal(session.thinkingLevel, "low" as ThinkingLevel);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime /effort records the level even when it does not change", async () => {
+  const { session, agentDir, previousAgentDir } = await createTestSession(reasoningModel, "high", "high");
+
+  try {
+    await session.prompt("/effort high");
+    assert.deepEqual(readModelEffort(agentDir), { "openrouter/minimax/minimax-m2.7": "high" });
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime records a change made through Pi's own thinking setter", async () => {
+  const { session, agentDir, previousAgentDir } = await createTestSession(reasoningModel, "high", "high");
+
+  try {
+    session.setThinkingLevel("low");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(readModelEffort(agentDir), { "openrouter/minimax/minimax-m2.7": "low" });
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime ignores a remembered level the model does not support", async () => {
+  const ui = createRecordingUI();
+  const { session, previousAgentDir } = await createTestSession(xhighModel, "xhigh", "xhigh", {}, {
+    piEffortSettings: { modelEffort: { "openrouter/minimax/minimax-m2.7": "xhigh" } },
+    uiContext: ui.uiContext,
+  });
+
+  try {
+    await session.setModel(reasoningModel);
+    assert.equal(session.thinkingLevel, "high" as ThinkingLevel);
+    assert.deepEqual(ui.notices.filter((notice) => notice.includes("restored")), []);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime model switch still works with a corrupt settings file", async () => {
+  const { session, agentDir, previousAgentDir } = await createTestSession(xhighModel, "xhigh", "xhigh");
+
+  try {
+    writeFileSync(join(agentDir, "settings.json"), "{not json}");
+    await session.setModel(reasoningModel);
+    assert.equal(session.thinkingLevel, "high" as ThinkingLevel);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime scoped pin wins over a remembered level when cycling", async () => {
+  const { session, previousAgentDir } = await createTestSession(xhighModel, "xhigh", "xhigh", {}, {
+    piEffortSettings: { modelEffort: { "openrouter/minimax/minimax-m2.7": "low" } },
+    scopedModels: [{ model: xhighModel }, { model: reasoningModel, thinkingLevel: "medium" }],
+  });
+
+  try {
+    await session.cycleModel();
+    assert.equal(session.model?.id, reasoningModel.id);
+    assert.equal(session.thinkingLevel, "medium" as ThinkingLevel);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime cycling without a pin restores the remembered level", async () => {
+  const { session, previousAgentDir } = await createTestSession(xhighModel, "xhigh", "xhigh", {}, {
+    piEffortSettings: { modelEffort: { "openrouter/minimax/minimax-m2.7": "low" } },
+    scopedModels: [{ model: xhighModel }, { model: reasoningModel }],
+  });
+
+  try {
+    await session.cycleModel();
+    assert.equal(session.model?.id, reasoningModel.id);
+    assert.equal(session.thinkingLevel, "low" as ThinkingLevel);
   } finally {
     cleanupSession(previousAgentDir);
   }

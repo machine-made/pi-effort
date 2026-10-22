@@ -9,13 +9,13 @@ Claude Fable reviewed 0.0.7 on 2026-08-15. See [SECURITY.md](SECURITY.md).
 Exactly two slash commands are exposed:
 
 ```text
-/effort [min|minimal|low|medium|high|xhigh|max]
+/effort [min|minimal|low|medium|high|xhigh|max|off|default]
 /fast [on|off]
 ```
 
 Bare `/effort` opens a picker with the current model's levels; Enter applies, Esc cancels.
 
-No `/effort show`, `/effort default`, `/effort options`, `/effort fast`, or `/fast status`. Bare `/fast` toggles the current fast-mode setting.
+No `/effort show`, `/effort options`, `/effort fast`, or `/fast status`. Bare `/fast` toggles the current fast-mode setting.
 
 ## Effort
 
@@ -29,12 +29,22 @@ No `/effort show`, `/effort default`, `/effort options`, `/effort fast`, or `/fa
 | max-capable reasoning | `minimal` | `max` | the model's levels up to `max` |
 | max-only reasoning | `max` | `max` | `max` |
 
+`off` and `default` are two names for the same thing: Pi's `off` state. What the provider does
+then depends on its API, as implemented in Pi 0.84:
+
+- OpenAI, Codex, Azure OpenAI, and Bedrock: Pi sends no effort field, so the model's own default
+  effort applies.
+- Anthropic, Google, and OpenAI-compatible hosts with an on/off thinking switch: Pi turns thinking
+  off.
+
 Examples:
 
 ```text
 /effort min
 /effort medium
 /effort max
+/effort off
+/effort default
 ```
 
 ## Fast mode
@@ -93,12 +103,42 @@ Both default to `true`. Only an explicit `false` hides a display.
 
 `Ctrl+Shift+E` cycles through the current model's reasoning levels.
 
+## Per-model effort
+
+The extension remembers the last level you chose for each model, and restores it when you switch
+back to that model with `/model` or model cycling. Example: `xhigh` on a GPT model, `medium` on
+Opus. Switching from GPT to Opus and back gives `medium`, then `xhigh` again, instead of the level
+Pi carried over and clamped.
+
+- A level counts as chosen when you set it with `/effort`, `Ctrl+Shift+E`, or Pi's own thinking
+  selector. The level Pi picks itself when a model cannot run the previous one is not remembered.
+- A pinned level in `enabledModels` or `--models` (for example `anthropic/*:high`) wins when cycling.
+- A remembered level the model no longer supports is skipped.
+- Startup and resumed sessions keep the level Pi chose (`--effort`, `--thinking`, a `:level` model
+  suffix, or the saved default). Restore happens on model switches only.
+
+The levels live in `~/.pi/agent/settings.json`, keyed by `provider/model-id`. Delete a key to make
+the extension forget that model:
+
+```json
+{
+  "pi-effort": {
+    "modelEffort": {
+      "openai/gpt-5.4": "xhigh",
+      "anthropic/claude-opus-4-6": "medium"
+    }
+  }
+}
+```
+
 ## CLI flag
 
 ```bash
 pi --effort max
 pi --effort min
 pi --effort high
+pi --effort off
+pi --effort default
 ```
 
 The flag uses the same values as `/effort`.
