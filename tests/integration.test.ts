@@ -926,3 +926,42 @@ test("runtime startup keeps Pi's level even when the model has a remembered one"
     cleanupSession(previousAgentDir);
   }
 });
+
+test("completions and picker leave out off for a model that cannot turn thinking off", async () => {
+  const alwaysThinkingModel: Model<any> = { ...reasoningModel, id: "always-thinking", thinkingLevelMap: { off: null } };
+  const { session, extension, previousAgentDir } = await createTestSession(alwaysThinkingModel, "high", "high");
+
+  try {
+    const command = extension.commands.get("effort");
+    assert.ok(command?.getArgumentCompletions && command.handler);
+    const completions = await command.getArgumentCompletions("");
+    assert.deepEqual(completions?.map((item) => item.value), ["min", "minimal", "low", "medium", "high", "max"]);
+
+    let offered: string[] | undefined;
+    const errors: string[] = [];
+    const ctx = {
+      model: alwaysThinkingModel,
+      isIdle: () => true,
+      hasUI: true,
+      ui: {
+        select: async (_title: string, options: string[]) => {
+          offered = options;
+          return undefined;
+        },
+        notify: (message: string, type: string) => {
+          if (type === "error") errors.push(message);
+        },
+        setStatus: () => {},
+        setWorkingMessage: () => {},
+      },
+    } as any;
+    await command.handler("", ctx);
+    assert.deepEqual(offered, ["min", "minimal", "low", "medium", "high", "max"]);
+
+    await command.handler("default", ctx);
+    assert.equal(session.thinkingLevel, "high" as ThinkingLevel);
+    assert.match(errors[0] ?? "", /does not support off/);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});

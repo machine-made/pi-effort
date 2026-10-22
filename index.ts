@@ -34,7 +34,9 @@ function effortOptions(model: EffortModel | null | undefined): string[] {
   const levels = getUserFacingLevels(model);
   if (levels.length === 0) return [];
   // `max` is always offered last as the alias; a max-only model still gets `min` and `max`.
-  return ["min", ...levels.filter((level) => level !== "max"), "max", "off", "default"];
+  const options = ["min", ...levels.filter((level) => level !== "max"), "max"];
+  // Some models cannot turn thinking off (`thinkingLevelMap.off: null`, e.g. gpt-5).
+  return getAvailableThinkingLevels(model).includes("off") ? [...options, "off", "default"] : options;
 }
 
 /** Completion and picker labels; `off` and `default` name the same state. */
