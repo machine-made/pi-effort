@@ -17,6 +17,7 @@ import {
   createExtensionRuntime,
   loadExtensionFromFactory,
 } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js";
+import { USAGE } from "../effort.ts";
 import effortExtension from "../index.ts";
 
 type PiThinkingLevel = ThinkingLevel | "off";
@@ -437,6 +438,7 @@ test("bare /effort applies the level picked in the select dialog", async () => {
     await command.handler("", {
       model: reasoningModel,
       isIdle: () => true,
+      hasUI: true,
       ui: {
         select: async (_title: string, options: string[]) => {
           offered = options;
@@ -483,6 +485,7 @@ test("bare /effort cancelled in the dialog leaves the level unchanged", async ()
     await command.handler("", {
       model: reasoningModel,
       isIdle: () => true,
+      hasUI: true,
       ui: {
         select: async () => undefined,
         notify: () => {},
@@ -544,6 +547,7 @@ test("bare /effort offers xhigh and resolves max for an xhigh-capable model", as
     await command.handler("", {
       model: xhighModel,
       isIdle: () => true,
+      hasUI: true,
       ui: {
         select: async (_title: string, options: string[]) => {
           offered = options;
@@ -557,6 +561,40 @@ test("bare /effort offers xhigh and resolves max for an xhigh-capable model", as
 
     assert.deepEqual(offered, ["min", "minimal", "low", "medium", "high", "xhigh", "max"]);
     assert.equal(session.thinkingLevel, "xhigh" as ThinkingLevel);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("bare /effort without a UI reports usage and leaves the level unchanged", async () => {
+  const { session, extension, previousAgentDir } = await createTestSession(reasoningModel, "medium", "medium");
+
+  try {
+    const command = extension.commands.get("effort");
+    assert.ok(command?.handler);
+
+    let selectCalled = false;
+    const errors: string[] = [];
+    await command.handler("", {
+      model: reasoningModel,
+      isIdle: () => true,
+      hasUI: false,
+      ui: {
+        select: async () => {
+          selectCalled = true;
+          return "low";
+        },
+        notify: (message: string, type: string) => {
+          if (type === "error") errors.push(message);
+        },
+        setStatus: () => {},
+        setWorkingMessage: () => {},
+      },
+    } as any);
+
+    assert.equal(selectCalled, false);
+    assert.deepEqual(errors, [USAGE]);
+    assert.equal(session.thinkingLevel, "medium" as ThinkingLevel);
   } finally {
     cleanupSession(previousAgentDir);
   }

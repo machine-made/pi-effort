@@ -31,6 +31,12 @@ function formatAvailableLevels(model: EffortModel | null | undefined): string {
   return getAvailableThinkingLevels(model).join(", ");
 }
 
+/** `/effort` tokens for the model: `min`, its reasoning levels, then `max`. */
+function effortOptions(model: EffortModel | null | undefined): string[] {
+  const levels = getUserFacingLevels(model).filter((level) => level !== "max");
+  return levels.length > 0 ? ["min", ...levels, "max"] : [];
+}
+
 function isFastModelId(modelId: string): boolean {
   return modelId.startsWith("gpt-5");
 }
@@ -232,8 +238,7 @@ export default function effortExtension(pi: ExtensionAPI): void {
       const tokens = value.split(/\s+/).filter(Boolean);
       const trailingSpace = /\s$/.test(value);
 
-      const modelLevels = getUserFacingLevels(currentModel).filter((level) => level !== "max");
-      const options = modelLevels.length > 0 ? ["min", ...modelLevels, "max"] : [];
+      const options = effortOptions(currentModel);
 
       if (tokens.length === 0) {
         return options.map((t) => ({ value: t, label: t }));
@@ -249,13 +254,14 @@ export default function effortExtension(pi: ExtensionAPI): void {
     },
     handler: async (args, ctx) => {
       let input = args.trim();
-      if (input === "") {
-        const levels = getUserFacingLevels(ctx.model).filter((level) => level !== "max");
-        if (levels.length === 0) {
+      // Without a UI, select() resolves to undefined; fall through to the usage error instead.
+      if (input === "" && ctx.hasUI) {
+        const options = effortOptions(ctx.model);
+        if (options.length === 0) {
           ctx.ui.notify(`Thinking not available for ${modelName(ctx.model)}`, "error");
           return;
         }
-        const picked = await ctx.ui.select(`Effort (current: ${pi.getThinkingLevel()})`, ["min", ...levels, "max"]);
+        const picked = await ctx.ui.select(`Effort (current: ${pi.getThinkingLevel()})`, options);
         if (!picked) return;
         input = picked;
       }
