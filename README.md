@@ -82,7 +82,7 @@ The extension also sets the working message to `Working (<level> effort)...`. Tu
 }
 ```
 
-- `showModelEffortInWorkingMessage: false` — the extension does not touch the working message. A message it already set stays until Pi restarts.
+- `showModelEffortInWorkingMessage: false` — the extension stops setting the working message and clears the one it set before, so Pi's default message returns.
 - `showModelEffortInFooter: false` — the extension clears both footer status keys.
 
 Both default to `true`. Only an explicit `false` hides a display.

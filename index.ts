@@ -9,8 +9,8 @@ import {
   cycleLevel,
   getAvailableThinkingLevels,
   FAST_ON_NOTICE,
-  getDisplaySettings,
   getFastMode,
+  getPiEffortSettings,
   getUserFacingLevels,
   isFastEligible,
   isEffortAlias,
@@ -89,6 +89,8 @@ export default function effortExtension(pi: ExtensionAPI): void {
   let currentModel: EffortModel | null = null;
   let activeRunEffort: string | undefined;
   let fastMode = getFastMode(settingsPath);
+  // Tracks whether this extension owns the working message, so turning the display off clears it once.
+  let ownsWorkingMessage = false;
 
   function refreshFastMode(): boolean {
     fastMode = getFastMode(settingsPath);
@@ -100,7 +102,16 @@ export default function effortExtension(pi: ExtensionAPI): void {
     current: string = pi.getThinkingLevel(),
     updateWorkingMessage = true
   ): string {
-    updateEffortUi(ctx, current, refreshFastMode(), getDisplaySettings(settingsPath), updateWorkingMessage);
+    const settings = getPiEffortSettings(settingsPath);
+    fastMode = settings.fastMode;
+    if (ownsWorkingMessage && !settings.showModelEffortInWorkingMessage) {
+      ctx.ui.setWorkingMessage(undefined);
+      ownsWorkingMessage = false;
+    }
+    updateEffortUi(ctx, current, fastMode, settings, updateWorkingMessage);
+    if (updateWorkingMessage && settings.showModelEffortInWorkingMessage) {
+      ownsWorkingMessage = true;
+    }
     return current;
   }
 

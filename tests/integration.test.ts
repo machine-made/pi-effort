@@ -516,6 +516,28 @@ test("runtime showModelEffortInWorkingMessage false leaves the working message a
   }
 });
 
+test("runtime clears its working message once showModelEffortInWorkingMessage turns false", async () => {
+  const ui = createRecordingUI();
+  const { session, agentDir, previousAgentDir } = await createTestSession(xhighModel, "medium", "medium", {}, {
+    uiContext: ui.uiContext,
+  });
+
+  try {
+    await session.prompt("/effort high");
+    assert.equal(ui.workingMessages.at(-1), "Working (high effort)...");
+
+    writePiEffortSettings(agentDir, { showModelEffortInWorkingMessage: false });
+    await session.prompt("/effort low");
+    const afterOff = ui.workingMessages.length;
+    assert.equal(ui.workingMessages.at(-1), undefined);
+
+    await session.prompt("/effort medium");
+    assert.equal(ui.workingMessages.length, afterOff);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
 test("runtime picks up showModelEffortInFooter changes mid-session", async () => {
   const ui = createRecordingUI();
   const { session, agentDir, previousAgentDir } = await createTestSession(xhighModel, "medium", "medium", {}, {

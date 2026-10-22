@@ -265,37 +265,43 @@ function readPiEffortSettings(settings: Record<string, unknown>): Record<string,
   return value && typeof value === "object" && !Array.isArray(value) ? { ...(value as Record<string, unknown>) } : {};
 }
 
-export function getFastMode(settingsPath: string): boolean {
-  try {
-    const settings = readSettingsObject(settingsPath);
-    const piEffort = readPiEffortSettings(settings);
-    return piEffort.fastMode === true;
-  } catch {
-    return false;
-  }
-}
-
-export interface DisplaySettings {
+export type DisplaySettings = {
   showModelEffortInWorkingMessage: boolean;
   showModelEffortInFooter: boolean;
-}
+};
 
-const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
+/** Everything the UI sync needs from the `pi-effort` block, read in one pass. */
+export type PiEffortSettings = DisplaySettings & {
+  fastMode: boolean;
+};
+
+const DEFAULT_PI_EFFORT_SETTINGS: PiEffortSettings = {
+  fastMode: false,
   showModelEffortInWorkingMessage: true,
   showModelEffortInFooter: true,
 };
 
-export function getDisplaySettings(settingsPath: string): DisplaySettings {
+/** A missing or corrupt settings file yields the defaults: fast off, every display shown. */
+export function getPiEffortSettings(settingsPath: string): PiEffortSettings {
   try {
-    const settings = readSettingsObject(settingsPath);
-    const piEffort = readPiEffortSettings(settings);
+    const piEffort = readPiEffortSettings(readSettingsObject(settingsPath));
     return {
+      fastMode: piEffort.fastMode === true,
       showModelEffortInWorkingMessage: piEffort.showModelEffortInWorkingMessage !== false,
       showModelEffortInFooter: piEffort.showModelEffortInFooter !== false,
     };
   } catch {
-    return { ...DEFAULT_DISPLAY_SETTINGS };
+    return { ...DEFAULT_PI_EFFORT_SETTINGS };
   }
+}
+
+export function getFastMode(settingsPath: string): boolean {
+  return getPiEffortSettings(settingsPath).fastMode;
+}
+
+export function getDisplaySettings(settingsPath: string): DisplaySettings {
+  const { showModelEffortInWorkingMessage, showModelEffortInFooter } = getPiEffortSettings(settingsPath);
+  return { showModelEffortInWorkingMessage, showModelEffortInFooter };
 }
 
 export function writeFastMode(settingsPath: string, enabled: boolean): void {
