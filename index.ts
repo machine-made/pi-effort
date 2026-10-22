@@ -33,8 +33,10 @@ function formatAvailableLevels(model: EffortModel | null | undefined): string {
 
 /** `/effort` tokens for the model: `min`, its reasoning levels, then `max`. */
 function effortOptions(model: EffortModel | null | undefined): string[] {
-  const levels = getUserFacingLevels(model).filter((level) => level !== "max");
-  return levels.length > 0 ? ["min", ...levels, "max"] : [];
+  const levels = getUserFacingLevels(model);
+  if (levels.length === 0) return [];
+  // `max` is always offered last as the alias; a max-only model still gets `min` and `max`.
+  return ["min", ...levels.filter((level) => level !== "max"), "max"];
 }
 
 function isFastModelId(modelId: string): boolean {

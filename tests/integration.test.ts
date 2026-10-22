@@ -49,6 +49,34 @@ const xhighModel: Model<any> = {
   maxTokens: 4096,
 };
 
+const maxModel: Model<any> = {
+  id: "deepseek-v4-flash",
+  name: "DeepSeek V4 Flash",
+  api: "openai-completions",
+  provider: "openrouter",
+  baseUrl: "https://openrouter.ai/api/v1",
+  reasoning: true,
+  thinkingLevelMap: { high: "high", max: "max" },
+  input: ["text"],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 196608,
+  maxTokens: 4096,
+};
+
+const maxOnlyModel: Model<any> = {
+  id: "kimi-k3",
+  name: "Kimi K3",
+  api: "openai-completions",
+  provider: "openrouter",
+  baseUrl: "https://openrouter.ai/api/v1",
+  reasoning: true,
+  thinkingLevelMap: { minimal: null, low: null, medium: null, high: null, max: "max" },
+  input: ["text"],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 196608,
+  maxTokens: 4096,
+};
+
 const plainModel: Model<any> = {
   id: "plain-model",
   name: "Plain Model",
@@ -403,6 +431,67 @@ test("argument completions expose only effort levels and fast on/off", async () 
     assert.ok(fastCommand?.getArgumentCompletions);
     const fastCommandOptions = await fastCommand.getArgumentCompletions("");
     assert.deepEqual(fastCommandOptions?.map((item) => item.value), ["on", "off"]);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+// ─── max-capable models (tests ported from PR #7) ───────────────────
+
+test("runtime /effort max resolves to max on max-capable and max-only models", async () => {
+  for (const model of [maxModel, maxOnlyModel]) {
+    const { session, previousAgentDir } = await createTestSession(model, "medium", "medium");
+    try {
+      await session.prompt("/effort max");
+      assert.equal(session.thinkingLevel, "max" as ThinkingLevel, model.id);
+    } finally {
+      cleanupSession(previousAgentDir);
+    }
+  }
+});
+
+test("runtime --effort max flag resolves to max on a max-capable model", async () => {
+  const { session, previousAgentDir } = await createTestSession(maxModel, "medium", "medium", { effort: "max" });
+
+  try {
+    assert.equal(session.thinkingLevel, "max" as ThinkingLevel);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("completions and picker offer min and max for a max-only model", async () => {
+  const { session, extension, previousAgentDir } = await createTestSession(maxOnlyModel, "max", "max");
+
+  try {
+    const command = extension.commands.get("effort");
+    assert.ok(command?.getArgumentCompletions && command.handler);
+
+    const completions = await command.getArgumentCompletions("");
+    assert.deepEqual(completions?.map((item) => item.value), ["min", "max"]);
+
+    let offered: string[] | undefined;
+    const errors: string[] = [];
+    await command.handler("", {
+      model: maxOnlyModel,
+      isIdle: () => true,
+      hasUI: true,
+      ui: {
+        select: async (_title: string, options: string[]) => {
+          offered = options;
+          return "min";
+        },
+        notify: (message: string, type: string) => {
+          if (type === "error") errors.push(message);
+        },
+        setStatus: () => {},
+        setWorkingMessage: () => {},
+      },
+    } as any);
+
+    assert.deepEqual(errors, []);
+    assert.deepEqual(offered, ["min", "max"]);
+    assert.equal(session.thinkingLevel, "max" as ThinkingLevel);
   } finally {
     cleanupSession(previousAgentDir);
   }

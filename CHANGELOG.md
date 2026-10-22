@@ -11,6 +11,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - `showModelEffortInFooter` setting hides the `think:<level>` and `fast` footer statuses.
 - Bare `/effort` opens a select dialog with the current model's levels instead of failing with the usage error.
 
+### Fixed
+- Tab completion and the `/effort` picker offered nothing for a model whose only level is `max`. They now offer `min` and `max`.
+
 ## [0.0.8] - 2026-08-15
 
 ### Added

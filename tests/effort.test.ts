@@ -32,6 +32,12 @@ void _driftCheck;
 const standardReasoningModel = { id: "minimax/minimax-m2.7", reasoning: true } as const;
 const xhighReasoningModel = { id: "gpt-5.4", reasoning: true, thinkingLevelMap: { xhigh: "xhigh" } } as const;
 const opusXhighReasoningModel = { id: "claude-opus-4.6", reasoning: true, thinkingLevelMap: { xhigh: "xhigh" } } as const;
+const maxReasoningModel = { id: "deepseek-v4-flash", reasoning: true, thinkingLevelMap: { high: "high", max: "max" } } as const;
+const maxOnlyReasoningModel = {
+  id: "kimi-k3",
+  reasoning: true,
+  thinkingLevelMap: { minimal: null, low: null, medium: null, high: null, max: "max" },
+} as const;
 
 // ─── parseEffortCommand / parseFastCommand ──────────────────────────
 
@@ -145,6 +151,28 @@ test("resolveEffortLevel resolves semantic aliases per model", () => {
   assert.equal(resolveEffortLevel("max", xhigh), "xhigh");
   assert.equal(resolveEffortLevel("medium", standard), "medium");
   assert.equal(resolveEffortLevel("min", { id: "plain-model", reasoning: false }), undefined);
+});
+
+// ─── max capability (tests ported from PR #7) ────────────────────────
+
+test("max capability: a max-capable model lists max after high", () => {
+  assert.deepEqual(getAvailableThinkingLevels(maxReasoningModel), ["off", "minimal", "low", "medium", "high", "max"]);
+  assert.deepEqual(getUserFacingLevels(maxReasoningModel), ["minimal", "low", "medium", "high", "max"]);
+  assert.equal(resolveMaxLevel(maxReasoningModel), "max");
+  assert.equal(resolveEffortLevel("max", maxReasoningModel), "max");
+});
+
+test("max capability: a max-only model surfaces only off and max", () => {
+  assert.deepEqual(getAvailableThinkingLevels(maxOnlyReasoningModel), ["off", "max"]);
+  assert.deepEqual(getUserFacingLevels(maxOnlyReasoningModel), ["max"]);
+  assert.equal(resolveMinLevel(maxOnlyReasoningModel), "max");
+  assert.equal(resolveMaxLevel(maxOnlyReasoningModel), "max");
+});
+
+test("cycleLevel advances through max and wraps on max-capable models", () => {
+  assert.equal(cycleLevel("high", maxReasoningModel), "max");
+  assert.equal(cycleLevel("max", maxReasoningModel), "minimal");
+  assert.equal(cycleLevel("max", maxOnlyReasoningModel), "max");
 });
 
 // ─── xhigh capability (via public functions) ─────────────────────────
