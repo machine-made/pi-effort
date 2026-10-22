@@ -6,15 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-22
+
 ### Added
-- `/effort off` and `/effort default` select Pi's `off` state. They also work in completions, the picker, and `--effort` (#8).
-- The extension remembers the last level chosen per model and restores it on a model switch. A scoped pin wins. Levels are stored under `pi-effort.modelEffort` (#4).
-- `showModelEffortInWorkingMessage` setting turns off the `Working (<level> effort)...` message.
-- `showModelEffortInFooter` setting hides the `think:<level>` and `fast` footer statuses.
-- Bare `/effort` opens a select dialog with the current model's levels instead of failing with the usage error.
+- `/effort default` asks the provider for the model's own default effort: Pi runs at `off` and the extension removes the "no thinking" fields from each request. `/effort off` turns thinking off. Both work in completions, the picker, and `--effort` (#8, requested by @cj81499).
+- The extension remembers the last level chosen per model and restores it on a model switch. A scoped pin wins. Levels are stored under `pi-effort.modelEffort` (#4, requested by @floriandotorg).
+- `showModelEffortInWorkingMessage` and `showModelEffortInFooter` settings hide the working message and the footer statuses (#11, by @fj).
+- Bare `/effort` opens a picker with the current model's levels. Without a UI it still prints the usage (#9, by @PhilBug).
+
+### Changed
+- `Ctrl+Shift+E` reports a change with the same message as `/effort`.
 
 ### Fixed
-- Tab completion and the `/effort` picker offered nothing for a model whose only level is `max`. They now offer `min` and `max`.
+- Tab completion and the `/effort` picker offered nothing for a model whose only level is `max`. They now offer `min` and `max`. Tests for max-capable models come from #7 by @azarakovskiy.
+- The test suite no longer needs an OpenRouter API key in the environment.
 
 ## [0.0.8] - 2026-08-15
 

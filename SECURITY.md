@@ -8,4 +8,9 @@ were a sticky `/fast` cost switch, a `gpt-5*` prefix for `service_tier`,
 and a settings write that replaced a symlink with a regular file.
 
 0.0.8 applies those three hardenings. The review is not a certificate.
+
+0.1.0 was not part of that review. It changes requests in one more case: under
+`/effort default` it removes the "no thinking" fields from the request body.
+It adds no network call and no process spawn. Its new settings write
+(`pi-effort.modelEffort`) uses the same symlink-safe atomic writer.
 Report issues at https://github.com/ricardofrantz/pi-effort/issues
