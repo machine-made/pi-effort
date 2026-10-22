@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
   type DisplaySettings,
@@ -112,7 +112,8 @@ export default function effortExtension(pi: ExtensionAPI): void {
     }
   }
 
-  function applySessionLevel(ctx: ExtensionCommandContext, level: EffortLevel): void {
+  /** Set `level`, remember it for the model, refresh the UI, and report the change. */
+  function applySessionLevel(ctx: ExtensionContext, level: EffortLevel): void {
     const available = getAvailableThinkingLevels(ctx.model);
     if (!available.includes(level)) {
       ctx.ui.notify(
@@ -171,13 +172,7 @@ export default function effortExtension(pi: ExtensionAPI): void {
         ctx.ui.notify("Thinking not available for this model", "warning");
         return;
       }
-      pi.setThinkingLevel(toThinkingLevel(next));
-      const after = pi.getThinkingLevel();
-      rememberEffort(ctx);
-      const appliesNow = ctx.isIdle();
-      syncEffortUi(ctx, after, appliesNow);
-      const suffix = appliesNow ? "" : " (applies next prompt)";
-      ctx.ui.notify(`Effort: ${current} -> ${after}${suffix}`, "info");
+      applySessionLevel(ctx, next);
     },
   });
 

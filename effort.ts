@@ -28,8 +28,9 @@ export const USER_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] 
 export const SEMANTIC_ALIASES = ["min", "max"] as const;
 
 /**
- * Tokens that select Pi's "off" state. Pi then sends no reasoning effort: OpenAI-family APIs apply
- * the model's own default, and Anthropic, Google, and Bedrock run without thinking.
+ * Tokens that select Pi's "off" state. In Pi 0.84, OpenAI, Codex, Azure OpenAI, and Bedrock then get
+ * no effort field, so the model's own default applies; Anthropic, Google, and on/off
+ * OpenAI-compatible hosts run without thinking.
  */
 export const OFF_TOKENS = ["off", "default"] as const;
 

@@ -896,3 +896,33 @@ test("runtime cycling without a pin restores the remembered level", async () => 
     cleanupSession(previousAgentDir);
   }
 });
+
+test("runtime Ctrl+Shift+E records the new level for the model", async () => {
+  const { session, extension, agentDir, previousAgentDir } = await createTestSession(reasoningModel, "medium", "medium");
+
+  try {
+    const shortcut = extension.shortcuts.get("ctrl+shift+e");
+    assert.ok(shortcut);
+    await shortcut.handler({
+      model: reasoningModel,
+      isIdle: () => true,
+      ui: { notify: () => {}, setStatus: () => {}, setWorkingMessage: () => {} },
+    } as any);
+    assert.equal(session.thinkingLevel, "high" as ThinkingLevel);
+    assert.deepEqual(readModelEffort(agentDir), { "openrouter/minimax/minimax-m2.7": "high" });
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime startup keeps Pi's level even when the model has a remembered one", async () => {
+  const { session, previousAgentDir } = await createTestSession(reasoningModel, "high", "high", {}, {
+    piEffortSettings: { modelEffort: { "openrouter/minimax/minimax-m2.7": "low" } },
+  });
+
+  try {
+    assert.equal(session.thinkingLevel, "high" as ThinkingLevel);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
