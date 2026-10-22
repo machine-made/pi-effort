@@ -206,7 +206,8 @@ export function resolveEffortCommand(
 ): EffortLevel | undefined {
   if (command.kind === "set-min") return resolveMinLevel(model);
   if (command.kind === "set-max") return resolveMaxLevel(model);
-  if (command.kind === "set-default") return "off";
+  // The provider default is a thinking choice, so it needs a reasoning model, like min and max.
+  if (command.kind === "set-default") return model?.reasoning ? "off" : undefined;
   return command.level;
 }
 

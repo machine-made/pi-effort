@@ -141,8 +141,10 @@ export default function effortExtension(pi: ExtensionAPI): void {
     }
 
     const before = currentChoice();
+    // Set the mode first: Pi may run thinking_level_select inside setThinkingLevel, and that handler
+    // records currentChoice().
+    providerDefault = useDefault && level === "off";
     pi.setThinkingLevel(toThinkingLevel(level));
-    providerDefault = useDefault && pi.getThinkingLevel() === "off";
     const after = currentChoice();
     // Pi fires thinking_level_select only on a change, so record here too.
     rememberEffort(ctx);
@@ -235,8 +237,8 @@ export default function effortExtension(pi: ExtensionAPI): void {
         return;
       }
 
+      providerDefault = command.kind === "set-default" && resolved === "off";
       pi.setThinkingLevel(toThinkingLevel(resolved));
-      providerDefault = command.kind === "set-default" && pi.getThinkingLevel() === "off";
       syncEffortUi(ctx);
     }
   });
@@ -260,10 +262,11 @@ export default function effortExtension(pi: ExtensionAPI): void {
       remembered !== currentChoice() &&
       getAvailableThinkingLevels(event.model).includes(target)
     ) {
-      pi.setThinkingLevel(toThinkingLevel(target));
       providerDefault = remembered === DEFAULT_TOKEN;
+      pi.setThinkingLevel(toThinkingLevel(target));
       ctx.ui.notify(`Effort ${remembered} restored for ${modelName(event.model)}`, "info");
-    } else if (pi.getThinkingLevel() !== "off") {
+    } else if (pinned || pi.getThinkingLevel() !== "off") {
+      // A pinned level is explicit. Otherwise a carried-over `off` keeps the mode, as Pi carries the level.
       providerDefault = false;
     }
     syncEffortUi(ctx, visibleEffort(ctx));

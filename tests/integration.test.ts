@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Model, ThinkingLevel } from "@earendil-works/pi-ai";
@@ -778,7 +778,9 @@ test("bare /effort picker entry off (no thinking) selects off", async () => {
 // ─── Per-model effort memory (issue #4) ─────────────────────────────
 
 function readModelEffort(agentDir: string): Record<string, string> | undefined {
-  return JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"))["pi-effort"]?.modelEffort;
+  const settingsPath = join(agentDir, "settings.json");
+  if (!existsSync(settingsPath)) return undefined;
+  return JSON.parse(readFileSync(settingsPath, "utf-8"))["pi-effort"]?.modelEffort;
 }
 
 test("runtime restores a model's remembered effort after a clamping switch", async () => {
@@ -1039,7 +1041,7 @@ test("runtime default mode survives a restart through the remembered choice", as
 });
 
 test("runtime restores default mode on a switch back to the model", async () => {
-  const { session, extension, previousAgentDir } = await createTestSession(xhighModel, "high", "high");
+  const { session, extension, agentDir, previousAgentDir } = await createTestSession(xhighModel, "high", "high");
 
   try {
     await session.prompt("/effort default");
@@ -1048,6 +1050,8 @@ test("runtime restores default mode on a switch back to the model", async () => 
     await session.setModel(xhighModel);
     assert.equal(session.thinkingLevel, "off" as PiThinkingLevel);
     assert.deepEqual(await sendProviderRequest(extension as any, xhighModel, OFF_PAYLOAD), { model: "gpt-5.4", input: [] });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(readModelEffort(agentDir)?.["openai/gpt-5.4"], "default");
   } finally {
     cleanupSession(previousAgentDir);
   }
@@ -1077,6 +1081,34 @@ test("runtime default mode and fast mode both apply to one request", async () =>
       input: [],
       service_tier: "priority",
     });
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime /effort default is refused on a non-reasoning model", async () => {
+  const { session, agentDir, previousAgentDir } = await createTestSession(plainModel, "off", "off");
+
+  try {
+    await session.prompt("/effort default");
+    assert.equal(session.thinkingLevel, "off" as PiThinkingLevel);
+    assert.equal(readModelEffort(agentDir), undefined);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime cycling to a model pinned at off ends default mode", async () => {
+  const { session, extension, previousAgentDir } = await createTestSession(xhighModel, "high", "high", {}, {
+    scopedModels: [{ model: xhighModel }, { model: reasoningModel, thinkingLevel: "off" }],
+  });
+
+  try {
+    await session.prompt("/effort default");
+    await session.cycleModel();
+    assert.equal(session.model?.id, reasoningModel.id);
+    assert.equal(session.thinkingLevel, "off" as PiThinkingLevel);
+    assert.deepEqual(await sendProviderRequest(extension as any, reasoningModel, OFF_PAYLOAD), OFF_PAYLOAD);
   } finally {
     cleanupSession(previousAgentDir);
   }
