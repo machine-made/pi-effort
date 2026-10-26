@@ -1,10 +1,10 @@
 {
   "name": "pi-effort",
   "version": "0.1.0",
-  "author": "Ricardo A S Frantz",
+  "author": "Ricardo Frantz",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ricardofrantz/pi-effort.git"
+    "url": "git+https://github.com/machine-made/pi-effort.git"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "0.84.2",
@@ -14,7 +14,7 @@
     "typescript": "^5.9.0"
   },
   "bugs": {
-    "url": "https://github.com/ricardofrantz/pi-effort/issues"
+    "url": "https://github.com/machine-made/pi-effort/issues"
   },
   "description": "Pi extension for controlling thinking effort with model-adaptive min/max aliases",
   "files": [
@@ -25,7 +25,7 @@
     "README.md",
     "LICENSE"
   ],
-  "homepage": "https://github.com/ricardofrantz/pi-effort#readme",
+  "homepage": "https://github.com/machine-made/pi-effort#readme",
   "keywords": [
     "pi-package",
     "pi-extension",

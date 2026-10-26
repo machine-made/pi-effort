@@ -157,7 +157,7 @@ pi install npm:pi-effort
 Until npm has the latest tag, install from git:
 
 ```bash
-pi install git:github.com/ricardofrantz/pi-effort
+pi install git:github.com/machine-made/pi-effort
 ```
 
 Verify what Pi is loading:
