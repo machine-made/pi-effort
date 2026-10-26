@@ -13,4 +13,4 @@ and a settings write that replaced a symlink with a regular file.
 `/effort default` it removes the "no thinking" fields from the request body.
 It adds no network call and no process spawn. Its new settings write
 (`pi-effort.modelEffort`) uses the same symlink-safe atomic writer.
-Report issues at https://github.com/ricardofrantz/pi-effort/issues
+Report issues at https://github.com/machine-made/pi-effort/issues
