@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ## [0.1.1] - 2026-10-28
 
 ### Changed
+- New npm name: `@machine-made/pi-effort`. Install with `pi install npm:@machine-made/pi-effort`. The old `pi-effort` package stops at 0.1.1 and is marked deprecated. The settings key `pi-effort` does not change.
 - The repository, homepage and docs links now point to github.com/machine-made/pi-effort.
 
 ## [0.1.0] - 2026-10-22

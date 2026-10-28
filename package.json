@@ -1,5 +1,5 @@
 {
-  "name": "pi-effort",
+  "name": "@machine-made/pi-effort",
   "version": "0.1.1",
   "author": "Ricardo Frantz",
   "repository": {
@@ -54,5 +54,8 @@
     "check": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts"
   },
-  "type": "module"
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  }
 }
