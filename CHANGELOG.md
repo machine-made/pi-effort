@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-28
+
+### Changed
+- The repository, homepage and docs links now point to github.com/machine-made/pi-effort.
+
 ## [0.1.0] - 2026-10-22
 
 ### Added
