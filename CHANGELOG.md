@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-28
+
+### Changed
+- First release published from GitHub with npm trusted publishing. No code change.
+
 ## [0.1.1] - 2026-10-28
 
 ### Changed
