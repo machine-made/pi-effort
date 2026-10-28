@@ -151,7 +151,7 @@ The flag uses the same values as `/effort`.
 Requires Pi 0.84 or newer (`@earendil-works/pi-coding-agent`).
 
 ```bash
-pi install npm:pi-effort
+pi install npm:@machine-made/pi-effort
 ```
 
 Until npm has the latest tag, install from git:
@@ -172,7 +172,7 @@ The durable Pi setting is the package entry in `~/.pi/agent/settings.json`:
 ```json
 {
   "packages": [
-    "npm:pi-effort"
+    "npm:@machine-made/pi-effort"
   ]
 }
 ```
@@ -189,7 +189,7 @@ pi -e ./index.ts
 For a longer local-path development install:
 
 ```bash
-pi remove npm:pi-effort
+pi remove npm:@machine-made/pi-effort
 pi install "$(pwd)"
 ```
 
@@ -198,7 +198,7 @@ After publishing a new version, switch back to the npm package:
 ```bash
 npm publish
 pi remove "$(pwd)"
-pi install npm:pi-effort
+pi install npm:@machine-made/pi-effort
 ```
 
 ## Verification
