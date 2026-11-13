@@ -229,3 +229,5 @@ permitted by law, the authors and contributors are not liable for any damage, lo
 or claim arising from its use or misuse. You are responsible for how you use it and
 for following the laws and rules that apply to you. The full terms are in
 [LICENSE](LICENSE).
+
+Gate proof line: temporary, removed with the PR.
