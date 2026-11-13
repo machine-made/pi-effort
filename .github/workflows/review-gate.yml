@@ -53,5 +53,7 @@ jobs:
             "Finished") ;;
             "Review rate limited") echo "::warning::CodeRabbit rate limited; cubic reviewed." ;;
             "Path filters excluded"*) echo "::notice::CodeRabbit: $cr_title" ;;
+            # CodeRabbit reviews the opening push only (auto_incremental_review false); cubic reviews every push.
+            "Review skipped: incremental reviews are disabled") echo "::warning::CodeRabbit reviews the opening push only; comment '@coderabbitai review' for this commit." ;;
             *) echo "::error::CodeRabbit did not review: $cr_title ($cr_concl)"; exit 1 ;;
           esac
