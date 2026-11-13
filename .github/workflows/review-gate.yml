@@ -7,12 +7,14 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 permissions:
-  contents: read
   checks: read
 jobs:
   review-gate:
-    # Dependabot and draft PRs: the job is skipped, which passes a required check.
-    if: github.actor != 'dependabot[bot]' && github.event.pull_request.draft == false
+    # Bot-authored dependency PRs and draft PRs: the job is skipped, which passes a required check.
+    if: >-
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      github.event.pull_request.user.login != 'renovate[bot]' &&
+      github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -23,27 +25,33 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          # Latest check run per bot app on this commit.
-          q='[.check_runs[] | select(.app.slug=="coderabbitai" or .app.slug=="cubic-dev-ai")
-              | {app: .app.slug, id, status, conclusion, title: .output.title}]
-              | group_by(.app) | map(max_by(.id))'
-          runs='[]'
+          # Latest check run of one app on this commit, as JSON; "null" when none or on an API error.
+          latest() {
+            gh api "repos/$REPO/commits/$SHA/check-runs?app_id=$1&filter=latest&per_page=100" \
+              --jq '[.check_runs[] | {id, status, conclusion, title: .output.title}] | max_by(.id)' \
+              2>/dev/null || echo null
+          }
+          cr=null; cu=null
           for i in $(seq 1 36); do                     # 36 x 30 s = 18 min
-            runs=$(gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" --jq "$q")
-            n_done=$(jq '[.[] | select(.status=="completed")] | length' <<<"$runs")
-            [ "$n_done" -ge 2 ] && break
+            cr=$(latest 347564)                        # CodeRabbit app
+            cu=$(latest 1082092)                       # cubic app
+            [ "$(jq -r '.status' <<<"$cr")" = completed ] && [ "$(jq -r '.status' <<<"$cu")" = completed ] && break
             sleep 30
           done
-          echo "$runs" | jq .
-          cr=$(jq -r '[.[]|select(.app=="coderabbitai" and .status=="completed")][0].title // "missing"' <<<"$runs")
-          cu=$(jq -r '[.[]|select(.app=="cubic-dev-ai" and .status=="completed")][0].title // "missing"' <<<"$runs")
-          case "$cu" in
-            "AI review completed") ;;
-            *) echo "::error::cubic did not complete a review: $cu"; exit 1 ;;
+          echo "CodeRabbit: $cr"; echo "cubic: $cu"
+          cr_title=$(jq -r 'if .status=="completed" then .title else "missing" end' <<<"$cr")
+          cr_concl=$(jq -r '.conclusion // "none"' <<<"$cr")
+          cu_title=$(jq -r 'if .status=="completed" then .title else "missing" end' <<<"$cu")
+          cu_concl=$(jq -r '.conclusion // "none"' <<<"$cu")
+          if [ "$cu_title" != "AI review completed" ] || [ "$cu_concl" != success ]; then
+            echo "::error::cubic did not complete a review: $cu_title ($cu_concl)"; exit 1
+          fi
+          case "$cr_concl" in
+            failure|cancelled|timed_out|action_required|none) echo "::error::CodeRabbit check did not pass: $cr_title ($cr_concl)"; exit 1 ;;
           esac
-          case "$cr" in
+          case "$cr_title" in
             "Finished") ;;
             "Review rate limited") echo "::warning::CodeRabbit rate limited; cubic reviewed." ;;
-            "Path filters excluded"*) echo "::notice::CodeRabbit: $cr" ;;
-            *) echo "::error::CodeRabbit did not review: $cr"; exit 1 ;;
+            "Path filters excluded"*) echo "::notice::CodeRabbit: $cr_title" ;;
+            *) echo "::error::CodeRabbit did not review: $cr_title ($cr_concl)"; exit 1 ;;
           esac
