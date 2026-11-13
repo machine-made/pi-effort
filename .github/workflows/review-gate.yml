@@ -8,6 +8,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
 permissions:
   checks: read
+  pull-requests: read   # list the PR commits
 jobs:
   review-gate:
     # Bot-authored dependency PRs and draft PRs: the job is skipped, which passes a required check.
@@ -23,6 +24,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           SHA: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
           # Latest check run of one app on this commit, as JSON; "null" when none or on an API error.
@@ -30,6 +32,15 @@ jobs:
             gh api "repos/$REPO/commits/$SHA/check-runs?app_id=$1&filter=latest&per_page=100" \
               --jq '[.check_runs[] | {id, status, conclusion, title: .output.title}] | max_by(.id)' \
               2>/dev/null || echo null
+          }
+          # True when CodeRabbit finished a review on any commit of this PR.
+          cr_reviewed_before() {
+            local c
+            for c in $(gh api "repos/$REPO/pulls/$PR/commits?per_page=100" --jq '.[].sha' 2>/dev/null); do
+              [ "$(gh api "repos/$REPO/commits/$c/check-runs?app_id=347564&filter=latest" \
+                     --jq '[.check_runs[] | select(.output.title=="Finished" and .conclusion=="success")] | length' 2>/dev/null || echo 0)" != 0 ] && return 0
+            done
+            return 1
           }
           cr=null; cu=null
           for i in $(seq 1 36); do                     # 36 x 30 s = 18 min
@@ -54,6 +65,12 @@ jobs:
             "Review rate limited") echo "::warning::CodeRabbit rate limited; cubic reviewed." ;;
             "Path filters excluded"*) echo "::notice::CodeRabbit: $cr_title" ;;
             # CodeRabbit reviews the opening push only (auto_incremental_review false); cubic reviews every push.
-            "Review skipped: incremental reviews are disabled") echo "::warning::CodeRabbit reviews the opening push only; comment '@coderabbitai review' for this commit." ;;
+            # Accept the skip only when CodeRabbit finished a review on an earlier commit of this PR.
+            "Review skipped: incremental reviews are disabled")
+              if cr_reviewed_before; then
+                echo "::warning::CodeRabbit reviews the opening push only; comment '@coderabbitai review' for this commit."
+              else
+                echo "::error::CodeRabbit never finished a review on this PR; comment '@coderabbitai review'."; exit 1
+              fi ;;
             *) echo "::error::CodeRabbit did not review: $cr_title ($cr_concl)"; exit 1 ;;
           esac
