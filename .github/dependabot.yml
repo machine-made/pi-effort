@@ -6,6 +6,8 @@ updates:
     open-pull-requests-limit: 5
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
     groups:
       github-actions-updates:
         patterns:
@@ -16,6 +18,8 @@ updates:
     open-pull-requests-limit: 5
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
     groups:
       npm-updates:
         patterns:
