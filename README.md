@@ -1,3 +1,5 @@
+![pi-effort banner](https://raw.githubusercontent.com/machine-made/pi-effort/main/assets/readme-banner-v3.jpg)
+
 [![CI](https://github.com/machine-made/pi-effort/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/machine-made/pi-effort/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@machine-made/pi-effort.svg)](https://www.npmjs.com/package/@machine-made/pi-effort)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
