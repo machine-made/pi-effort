@@ -1,4 +1,5 @@
-# Public repo: CodeRabbit reviews the opening push of every PR (jac decision 0048); later pushes on request (@coderabbitai review).
+# Public repo: CodeRabbit reviews the opening push of non-draft PRs not authored by dependabot[bot] or renovate[bot]; later pushes on request (@coderabbitai review).
+# The opening-push-only rule is auto_incremental_review: false in the central config, which this file inherits.
 inheritance: true
 reviews:
   auto_review:
