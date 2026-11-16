@@ -1,6 +1,10 @@
-# pi-effort
+![pi-effort banner](https://raw.githubusercontent.com/machine-made/pi-effort/main/assets/readme-banner-v3.jpg)
 
-Extension for [pi](https://github.com/badlogic/pi-mono): small command surface for reasoning effort and OpenAI/Codex fast mode.
+[![CI](https://github.com/machine-made/pi-effort/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/machine-made/pi-effort/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@machine-made/pi-effort.svg)](https://www.npmjs.com/package/@machine-made/pi-effort)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
+`pi-effort` is an extension for [pi](https://github.com/badlogic/pi-mono) with a small command surface for reasoning effort and OpenAI/Codex fast mode.
 
 Claude Fable reviewed 0.0.7 on 2026-08-15. See [SECURITY.md](SECURITY.md).
 
