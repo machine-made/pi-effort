@@ -1,5 +1,8 @@
 # Fails when cubic did not complete a review, or when CodeRabbit was off or errored.
 # Passes with a warning when CodeRabbit is only rate limited.
+# Passes with a warning when cubic's review quota is used up and CodeRabbit finished a
+# successful review of this commit (decision 0023). Any other CodeRabbit result then fails:
+# one bot must have reviewed the commit.
 # Reads check runs only. Check titles are matched as text: update them here
 # when a vendor renames one.
 name: review-gate
@@ -67,6 +70,13 @@ jobs:
           cr_concl=$(jq -r '.conclusion // "none"' <<<"$cr")
           cu_title=$(jq -r 'if .status=="completed" then .title else "missing" end' <<<"$cu")
           cu_concl=$(jq -r '.conclusion // "none"' <<<"$cu")
+          case "$cu_title" in
+            *"limit reached"*)                         # cubic's review quota is used up
+              if [ "$cr_title" = "Finished" ] && [ "$cr_concl" = success ]; then
+                echo "::warning::cubic is out of review quota; CodeRabbit reviewed this commit."; exit 0
+              fi
+              echo "::error::cubic is out of review quota and CodeRabbit did not review this commit: $cr_title ($cr_concl). Comment '@coderabbitai full review', then re-run this job once that review has finished."; exit 1 ;;
+          esac
           if [ "$cu_title" != "AI review completed" ] || [ "$cu_concl" != success ]; then
             echo "::error::cubic did not complete a review: $cu_title ($cu_concl)"; exit 1
           fi
